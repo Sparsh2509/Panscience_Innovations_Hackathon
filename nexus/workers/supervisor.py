@@ -107,6 +107,10 @@ class WorkerSupervisor:
 
         return crashed
 
+    def reap_and_restart_crashed(self) -> list[str]:
+        """Alias for check_and_restart."""
+        return self.check_and_restart()
+
     def stop(self):
         """Terminates all supervised worker processes cleanly."""
         self.running = False
