@@ -306,6 +306,13 @@ function renderJobs(jobs) {
       ? `<span class="cell-mono" style="color: var(--color-danger-bright); font-size: 11px;" title="${escapeHtml(j.last_error)}">${escapeHtml(j.last_error.substring(0, 24))}...</span>`
       : `<span style="color: var(--text-dim);">-</span>`;
 
+    const now = Date.now() / 1000;
+    let statusBadge = getStatusBadge(j.status);
+    if (j.status === "QUEUED" && j.run_at && j.run_at > now + 1) {
+      const waitSecs = Math.round(j.run_at - now);
+      statusBadge += ` <span style="font-size: 10.5px; color: var(--color-warning-bright); font-weight: 500;">(backoff: ${waitSecs}s)</span>`;
+    }
+
     const retryBtn = (j.status === "FAILED" || j.status === "DEAD_LETTER")
       ? `<button class="btn btn-sm btn-secondary" style="padding: 2px 8px; font-size: 11px;" onclick="retryJobDirect('${j.id}')">↺ Retry</button>`
       : "";
@@ -314,7 +321,7 @@ function renderJobs(jobs) {
       <tr>
         <td class="cell-mono" style="font-weight: 700; color: var(--color-primary-hover); cursor: pointer;" onclick="openJobDetails('${j.id}')" title="Inspect job">${shortId}</td>
         <td><strong>${escapeHtml(j.job_type)}</strong></td>
-        <td>${getStatusBadge(j.status)}</td>
+        <td>${statusBadge}</td>
         <td class="cell-mono">${j.priority !== undefined ? j.priority : 0}</td>
         <td class="cell-mono">${j.attempt_count}</td>
         <td class="cell-mono">${j.max_retries}</td>
@@ -422,6 +429,16 @@ function renderWorkers(workers) {
       ? `<button class="btn btn-sm btn-primary" onclick="restartWorker('${escapeHtml(w.id)}')">↺ Restart</button>`
       : "";
 
+    let activityHtml = "";
+    if (w.status === "BUSY" && w.current_job_id) {
+      activityHtml = `<div style="color: var(--color-primary-hover); font-weight: 600;">⚡ Currently Processing: <span style="text-decoration: underline; cursor: pointer;" onclick="openJobDetails('${w.current_job_id}')">${escapeHtml(w.current_job_id.substring(0, 8))}</span></div>`;
+    } else if (w.last_event) {
+      const ago = w.last_event.seconds_ago < 60 ? `${w.last_event.seconds_ago}s ago` : `${Math.floor(w.last_event.seconds_ago / 60)}m ago`;
+      activityHtml = `<div>Recent: <strong>${escapeHtml(w.last_event.event_type)}</strong> (<span style="color: var(--color-primary-hover); cursor: pointer;" onclick="openJobDetails('${w.last_event.job_id}')">${escapeHtml(w.last_event.job_id.substring(0, 8))}</span>, ${ago})</div>`;
+    } else {
+      activityHtml = `<div style="color: var(--text-dim);">Idle — waiting for eligible queued jobs</div>`;
+    }
+
     return `
       <div class="worker-card" style="${borderStyle}">
         <div class="worker-card-header">
@@ -436,8 +453,9 @@ function renderWorkers(workers) {
           </div>
         </div>
         <div class="worker-card-body cell-mono">
-          <div>PID: <strong>${w.pid}</strong> | Started: <strong>${startedStr}</strong></div>
-          <div>Heartbeat Age: <strong>${w.heartbeat_age_seconds}s</strong> | Current Job: <strong>${w.current_job_id ? escapeHtml(w.current_job_id.substring(0, 8)) : "None"}</strong></div>
+          <div>PID: <strong>${w.pid}</strong> | Started: <strong>${startedStr}</strong> | Completed: <strong style="color: var(--color-success-bright);">${w.jobs_completed_count || 0}</strong></div>
+          <div>Heartbeat: <strong>${w.heartbeat_age_seconds}s ago</strong></div>
+          ${activityHtml}
         </div>
       </div>
     `;
