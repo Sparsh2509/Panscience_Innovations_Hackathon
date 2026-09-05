@@ -5,10 +5,11 @@ worker fleet monitoring, release management, audit query, and chaos simulation.
 """
 
 from contextlib import asynccontextmanager
-import sqlite3
+from pathlib import Path
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from nexus.api.dependencies import get_db_conn
 from nexus.api.routes import audit, chaos, jobs, releases, workers
@@ -124,3 +125,20 @@ app.include_router(workers.router, prefix="/api/workers", tags=["Workers"])
 app.include_router(releases.router, prefix="/api/releases", tags=["Releases"])
 app.include_router(audit.router, prefix="/api/audit", tags=["Audit"])
 app.include_router(chaos.router, prefix="/api/chaos", tags=["Chaos & Failure Simulation"])
+
+# Static Dashboard Mounting
+STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
+STATIC_DIR.mkdir(parents=True, exist_ok=True)
+
+@app.get("/", include_in_schema=False)
+def serve_root():
+    """Serves the NEXUS Operator Dashboard control room."""
+    return FileResponse(STATIC_DIR / "index.html")
+
+@app.get("/dashboard", include_in_schema=False)
+def serve_dashboard():
+    """Alternative route for the operator dashboard."""
+    return FileResponse(STATIC_DIR / "index.html")
+
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+

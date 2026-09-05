@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NEXUS — Reliable Local Work Platform</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+  <!-- Top Header -->
+  <header class="app-header">
+    <div class="brand-wrapper">
+      <div class="brand-logo">NEXUS</div>
+      <div>
+        <div style="font-weight: 700; font-size: 14px;">CONTROL ROOM</div>
+        <div class="brand-tagline">Reliable Local Work Platform</div>
+      </div>
+    </div>
+    <div class="header-status-controls">
+      <div class="status-indicator">
+        <span id="connection-dot" class="status-dot connected"></span>
+        <span id="connection-text">API Connected</span>
+      </div>
+      <div class="refresh-countdown">
+        Auto-refresh: <span id="refresh-timer">3s</span>
+      </div>
+      <button id="btn-manual-refresh" class="btn btn-sm">
+        <span>⟳</span> Refresh
+      </button>
+    </div>
+  </header>
+
+  <!-- Disconnected Banner -->
+  <div id="api-disconnected-banner" style="display: none; background: var(--color-danger); color: #fff; text-align: center; padding: 10px; font-weight: 700; font-size: 13px; letter-spacing: 0.5px;">
+    ⚠️ Unable to reach NEXUS API. The dashboard is offline.
+  </div>
+
+  <div class="dashboard-container">
+
+    <!-- Section 1: System Overview Cards -->
+    <section class="overview-grid">
+      <!-- Jobs Pipeline Card -->
+      <div class="overview-card">
+        <div class="card-title">Jobs Pipeline</div>
+        <div class="metric-pipeline">
+          <div class="pipeline-item">
+            <span id="count-queued" class="val" style="color: var(--color-warning-bright);">0</span>
+            <span class="lbl">Queued</span>
+          </div>
+          <div class="pipeline-item">
+            <span id="count-running" class="val" style="color: var(--color-primary-hover);">0</span>
+            <span class="lbl">Running</span>
+          </div>
+          <div class="pipeline-item">
+            <span id="count-completed" class="val" style="color: var(--color-success-bright);">0</span>
+            <span class="lbl">Completed</span>
+          </div>
+          <div class="pipeline-item">
+            <span id="count-failed" class="val" style="color: var(--color-danger-bright);">0</span>
+            <span class="lbl">Failed</span>
+          </div>
+          <div class="pipeline-item">
+            <span id="count-dead-letter" class="val" style="color: var(--color-purple-bright);">0</span>
+            <span class="lbl">Dead Letter</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Worker Fleet Card -->
+      <div class="overview-card">
+        <div class="card-title">Worker Fleet</div>
+        <div class="metric-pipeline">
+          <div class="pipeline-item">
+            <span id="count-workers-total" class="val">0</span>
+            <span class="lbl">Total</span>
+          </div>
+          <div class="pipeline-item">
+            <span id="count-workers-healthy" class="val" style="color: var(--color-success-bright);">0</span>
+            <span class="lbl">Healthy</span>
+          </div>
+          <div class="pipeline-item">
+            <span id="count-workers-dead" class="val" style="color: var(--color-danger-bright);">0</span>
+            <span class="lbl">Dead</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Active Release Card -->
+      <div class="overview-card">
+        <div class="card-title">Production Release (R-06)</div>
+        <div style="display: flex; align-items: baseline; gap: 8px;">
+          <span id="overview-active-release" class="cell-mono" style="font-size: 24px; font-weight: 800; color: var(--color-primary-hover);">v1.0.0</span>
+          <span class="badge badge-completed">ACTIVE</span>
+        </div>
+        <div style="font-size: 11px; color: var(--text-muted);">Atomic one-action rollback ready</div>
+      </div>
+
+      <!-- Audit History Card -->
+      <div class="overview-card">
+        <div class="card-title">Audit Log Stream</div>
+        <div style="display: flex; align-items: baseline; gap: 8px;">
+          <span id="overview-audit-count" class="val" style="font-size: 24px; font-weight: 800;">0</span>
+          <span class="lbl">Recent Events</span>
+        </div>
+        <div style="font-size: 11px; color: var(--text-muted);">Append-only immutable record</div>
+      </div>
+    </section>
+
+    <!-- Main Working Grid -->
+    <div class="main-grid">
+
+      <!-- Left Column: Jobs, Submission, Workers -->
+      <div class="main-column">
+
+        <!-- Section 2: Jobs Management -->
+        <section class="panel">
+          <div class="panel-header">
+            <div class="panel-title">
+              <span>📋</span> Jobs Queue & Pipeline
+            </div>
+            <div class="panel-actions">
+              <button class="btn btn-sm" onclick="loadOverviewAndJobs()">⟳ Refresh Jobs</button>
+            </div>
+          </div>
+          <div class="filter-bar">
+            <button class="filter-btn active" data-status="ALL">ALL</button>
+            <button class="filter-btn" data-status="QUEUED">QUEUED</button>
+            <button class="filter-btn" data-status="RUNNING">RUNNING</button>
+            <button class="filter-btn" data-status="COMPLETED">COMPLETED</button>
+            <button class="filter-btn" data-status="FAILED">FAILED</button>
+            <button class="filter-btn" data-status="DEAD_LETTER">DEAD_LETTER</button>
+          </div>
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>Job ID</th>
+                  <th>Job Type</th>
+                  <th>Status</th>
+                  <th>Priority</th>
+                  <th>Attempt</th>
+                  <th>Max Retries</th>
+                  <th>Release</th>
+                  <th>Created</th>
+                  <th>Last Error</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="jobs-table-body">
+                <tr><td colspan="10" style="text-align: center; color: var(--text-muted); padding: 20px;">Loading jobs...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- Section 3: Submit Job -->
+        <section class="panel">
+          <div class="panel-header">
+            <div class="panel-title">
+              <span>➕</span> Ingest Background Job
+            </div>
+            <div style="font-size: 11px; color: var(--text-muted);">
+              Durable & Idempotent
+            </div>
+          </div>
+          <div class="panel-body">
+            <form id="form-submit-job">
+              <div class="form-row" style="margin-bottom: 12px;">
+                <div class="form-group" style="margin: 0;">
+                  <label>Quick Template</label>
+                  <select id="job-template-select" class="form-control">
+                    <option value="">-- Choose Payload Template --</option>
+                    <option value="echo">echo: {"message": "Hello from NEXUS"}</option>
+                    <option value="sleep">sleep: {"seconds": 2}</option>
+                    <option value="success">success: {"message": "Payment settled"}</option>
+                    <option value="fail">fail: {"message": "Simulated upstream timeout"}</option>
+                  </select>
+                </div>
+                <div class="form-group" style="margin: 0;">
+                  <label>Job Type *</label>
+                  <input type="text" id="input-job-type" class="form-control" placeholder="e.g. echo, sleep, process_invoice" required>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label>Payload (JSON)</label>
+                <textarea id="input-job-payload" class="form-control" rows="3" placeholder='{"message": "payload data"}'></textarea>
+              </div>
+
+              <div class="form-row">
+                <div class="form-group">
+                  <label>Idempotency Key (Prevents duplicates)</label>
+                  <input type="text" id="input-job-idempotency" class="form-control cell-mono" placeholder="e.g. req-invoice-98214">
+                </div>
+                <div class="form-group">
+                  <div class="form-row">
+                    <div>
+                      <label>Priority</label>
+                      <input type="number" id="input-job-priority" class="form-control" value="0">
+                    </div>
+                    <div>
+                      <label>Max Retries</label>
+                      <input type="number" id="input-job-retries" class="form-control" value="3" min="0" max="10">
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div style="display: flex; justify-content: flex-end;">
+                <button type="submit" class="btn btn-primary">
+                  <span>⚡</span> Submit Job
+                </button>
+              </div>
+            </form>
+          </div>
+        </section>
+
+        <!-- Section 4: Workers Monitor -->
+        <section class="panel">
+          <div class="panel-header">
+            <div class="panel-title">
+              <span>⚙️</span> Worker Fleet Monitor
+            </div>
+            <div class="panel-actions">
+              <button class="btn btn-sm" onclick="loadWorkers()">⟳ Refresh Workers</button>
+            </div>
+          </div>
+          <div class="panel-body">
+            <div id="workers-container" style="display: flex; flex-direction: column; gap: 10px;">
+              <div style="color: var(--text-muted);">Loading worker fleet...</div>
+            </div>
+          </div>
+        </section>
+
+      </div>
+
+      <!-- Right Column: Rollback, Releases, Chaos Lab, Audit Stream -->
+      <div class="sidebar-column">
+
+        <!-- ONE-ACTION ROLLBACK BANNER (R-06 Core Requirement) -->
+        <div class="rollback-banner">
+          <div class="rollback-info">
+            <div>
+              <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--color-danger-bright);">
+                Zero-Touch Rollback (R-06)
+              </div>
+              <div style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">
+                Current Active: <span id="banner-active-release" class="rollback-version-tag">v1.0.0</span>
+              </div>
+            </div>
+            <button id="btn-trigger-rollback" class="btn btn-danger">
+              <span>↺</span> ROLLBACK TO PREVIOUS RELEASE
+            </button>
+          </div>
+        </div>
+
+        <!-- Section 5: Releases Panel -->
+        <section class="panel">
+          <div class="panel-header">
+            <div class="panel-title">
+              <span>📦</span> Release Management
+            </div>
+            <div class="panel-actions">
+              <button class="btn btn-sm" onclick="loadReleases()">⟳ Refresh</button>
+            </div>
+          </div>
+          <div class="table-container" style="max-height: 220px;">
+            <table>
+              <thead>
+                <tr>
+                  <th>Version</th>
+                  <th>Status</th>
+                  <th>Description</th>
+                  <th>By</th>
+                  <th>Deployed At</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="releases-table-body">
+                <tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 12px;">Loading releases...</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div style="padding: 12px 18px; border-top: 1px solid var(--border-color); background: rgba(0,0,0,0.15);">
+            <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; margin-bottom: 8px; color: var(--text-muted);">
+              Create Release Candidate
+            </div>
+            <form id="form-create-release">
+              <div class="form-row" style="margin-bottom: 8px;">
+                <input type="text" id="input-rel-version" class="form-control cell-mono" placeholder="Version (e.g. v1.1.0)" required>
+                <input type="text" id="input-rel-desc" class="form-control" placeholder="Description" required>
+              </div>
+              <div class="form-group" style="margin-bottom: 8px;">
+                <textarea id="input-rel-config" class="form-control" rows="2" placeholder='{"feature_flag": true}'></textarea>
+              </div>
+              <div style="display: flex; justify-content: flex-end;">
+                <button type="submit" class="btn btn-sm btn-primary">Create Release</button>
+              </div>
+            </form>
+          </div>
+        </section>
+
+        <!-- Section 7: Chaos / Failure Lab -->
+        <section class="panel chaos-panel">
+          <div class="panel-header">
+            <div class="panel-title" style="color: var(--color-danger-bright);">
+              <span>⚡</span> CHAOS / FAILURE LAB
+            </div>
+          </div>
+          <div class="panel-body">
+            <div class="chaos-warning">
+              <span>⚠️</span> Controlled demonstrations only. Safe local failure injection.
+            </div>
+
+            <!-- 1. Fail Job -->
+            <div style="margin-bottom: 14px;">
+              <label style="font-size: 11px; font-weight: 600; text-transform: uppercase; color: var(--text-muted); display: block; margin-bottom: 4px;">
+                1. Force Controlled Job Failure (Tests Exponential Retry & Dead-Letter)
+              </label>
+              <div class="chaos-action-row">
+                <select id="chaos-job-select" class="form-control cell-mono">
+                  <option value="">-- Select Job to Fail --</option>
+                </select>
+                <button id="btn-chaos-fail" class="btn btn-warning btn-sm">Fail Job</button>
+              </div>
+            </div>
+
+            <!-- 2. Crash Worker -->
+            <div style="margin-bottom: 14px;">
+              <label style="font-size: 11px; font-weight: 600; text-transform: uppercase; color: var(--text-muted); display: block; margin-bottom: 4px;">
+                2. Hard Kill Worker Process (Tests Lease Expiry & Reaper Recovery)
+              </label>
+              <div class="chaos-action-row">
+                <select id="chaos-worker-select" class="form-control cell-mono">
+                  <option value="">-- Select Worker to Crash --</option>
+                </select>
+                <button id="btn-chaos-crash" class="btn btn-danger btn-sm">Kill Worker</button>
+              </div>
+            </div>
+
+            <!-- 3. Simulate Release Incident -->
+            <div>
+              <label style="font-size: 11px; font-weight: 600; text-transform: uppercase; color: var(--text-muted); display: block; margin-bottom: 4px;">
+                3. Deploy Faulty Release (Demonstrates R-06 Rollback Need)
+              </label>
+              <button id="btn-chaos-incident" class="btn btn-warning" style="width: 100%;">
+                <span>💥</span> Simulate Release Incident (Deploys v1.1.0-buggy)
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <!-- Section 6: Audit Log Stream -->
+        <section class="panel">
+          <div class="panel-header">
+            <div class="panel-title">
+              <span>📜</span> Audit Trail (What, Who, Why)
+            </div>
+            <div class="panel-actions">
+              <button class="btn btn-sm" onclick="loadAudit()">⟳ Refresh</button>
+            </div>
+          </div>
+          <div class="panel-body" style="padding: 10px;">
+            <div id="audit-stream" class="audit-stream">
+              <div style="color: var(--text-muted); padding: 12px;">Loading audit stream...</div>
+            </div>
+          </div>
+        </section>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Job Details Modal -->
+  <div id="modal-job-details" class="modal-backdrop">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <div class="modal-title">Job Inspection & Timeline</div>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 12px; background: rgba(0,0,0,0.25); padding: 12px; border-radius: 6px; border: 1px solid var(--border-color);">
+          <div><strong>Job ID:</strong> <span id="modal-job-id" class="cell-mono"></span></div>
+          <div><strong>Job Type:</strong> <span id="modal-job-type"></span></div>
+          <div><strong>Status:</strong> <span id="modal-job-status"></span></div>
+          <div><strong>Priority:</strong> <span id="modal-job-priority" class="cell-mono"></span></div>
+          <div><strong>Attempt Count:</strong> <span id="modal-job-attempts" class="cell-mono"></span></div>
+          <div><strong>Max Retries:</strong> <span id="modal-job-max-retries" class="cell-mono"></span></div>
+          <div><strong>Release Version:</strong> <span id="modal-job-release" class="cell-mono"></span></div>
+          <div><strong>Leased Worker:</strong> <span id="modal-job-worker" class="cell-mono"></span></div>
+          <div><strong>Lease Expiration:</strong> <span id="modal-job-lease-exp" class="cell-mono"></span></div>
+          <div><strong>Created At:</strong> <span id="modal-job-created" style="color: var(--text-muted);"></span></div>
+          <div style="grid-column: 1 / -1;"><strong>Updated At:</strong> <span id="modal-job-updated" style="color: var(--text-muted);"></span></div>
+          <div style="grid-column: 1 / -1;">
+            <strong>Last Error:</strong> <span id="modal-job-error" style="color: var(--color-danger-bright);"></span>
+          </div>
+        </div>
+
+        <div>
+          <strong style="font-size: 12px; text-transform: uppercase; color: var(--text-muted);">Payload:</strong>
+          <pre id="modal-job-payload" style="background: var(--bg-input); padding: 8px 12px; border-radius: 4px; border: 1px solid var(--border-color); font-size: 11px; overflow-x: auto; margin-top: 4px;"></pre>
+        </div>
+
+        <div>
+          <strong style="font-size: 12px; text-transform: uppercase; color: var(--text-muted);">Result:</strong>
+          <pre id="modal-job-result" style="background: var(--bg-input); padding: 8px 12px; border-radius: 4px; border: 1px solid var(--border-color); font-size: 11px; overflow-x: auto; margin-top: 4px;"></pre>
+        </div>
+
+        <div>
+          <strong style="font-size: 12px; text-transform: uppercase; color: var(--text-muted); display: block; margin-bottom: 6px;">Audit Timeline ("What happened and why"):</strong>
+          <div id="modal-job-timeline"></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn modal-cancel">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Release Impact Modal (R-07) -->
+  <div id="modal-release-impact" class="modal-backdrop">
+    <div class="modal-dialog" style="max-width: 820px;">
+      <div class="modal-header">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span style="font-size: 18px;">📊</span>
+          <div class="modal-title">Release Impact Analysis: <span id="impact-modal-version" class="cell-mono text-primary" style="color: var(--color-primary-hover);"></span></div>
+          <span id="impact-health-badge" class="badge"></span>
+        </div>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body" style="gap: 16px;">
+
+        <!-- Operator Summary Banner -->
+        <div id="impact-summary-box" class="impact-summary-card">
+          <div style="display: flex; align-items: flex-start; gap: 10px;">
+            <span style="font-size: 18px;">ℹ️</span>
+            <div>
+              <div style="font-size: 11px; text-transform: uppercase; font-weight: 700; color: var(--text-muted); margin-bottom: 2px;">
+                Operator Correlation Summary (R-07)
+              </div>
+              <div id="impact-summary-text" style="font-size: 13px; line-height: 1.4; color: var(--text-main);"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Metrics Grid -->
+        <div class="impact-metrics-grid">
+          <div class="impact-metric-card">
+            <div class="impact-metric-label">Jobs Processed</div>
+            <div id="impact-metric-jobs" class="impact-metric-val">0</div>
+            <div id="impact-metric-success-rate" class="impact-metric-sub">100% Success</div>
+          </div>
+          <div class="impact-metric-card">
+            <div class="impact-metric-label">Failures & Dead-Letter</div>
+            <div id="impact-metric-failures" class="impact-metric-val">0</div>
+            <div id="impact-metric-deadletter" class="impact-metric-sub">0 Dead-Letter</div>
+          </div>
+          <div class="impact-metric-card">
+            <div class="impact-metric-label">Worker Incidents</div>
+            <div id="impact-metric-workers" class="impact-metric-val">0</div>
+            <div id="impact-metric-restarts" class="impact-metric-sub">0 Restarts</div>
+          </div>
+          <div class="impact-metric-card">
+            <div class="impact-metric-label">Active Duration</div>
+            <div id="impact-metric-duration" class="impact-metric-val">0s</div>
+            <div id="impact-metric-status" class="impact-metric-sub">Status: Active</div>
+          </div>
+        </div>
+
+        <!-- Behaviour Milestones -->
+        <div>
+          <div style="font-size: 11px; text-transform: uppercase; font-weight: 700; color: var(--text-muted); margin-bottom: 8px;">
+            Behaviour Milestones Progression
+          </div>
+          <div id="impact-milestones-row" class="impact-milestones-container"></div>
+        </div>
+
+        <!-- Failure Breakdown -->
+        <div id="impact-failure-section" style="display: none;">
+          <div style="font-size: 11px; text-transform: uppercase; font-weight: 700; color: var(--color-danger-bright); margin-bottom: 8px;">
+            Observed Failure Diagnostic Signatures
+          </div>
+          <div id="impact-failure-types" style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px;"></div>
+          <div id="impact-sample-errors" style="display: flex; flex-direction: column; gap: 6px;"></div>
+        </div>
+
+        <!-- Chronological Release Timeline -->
+        <div>
+          <div style="font-size: 11px; text-transform: uppercase; font-weight: 700; color: var(--text-muted); margin-bottom: 8px;">
+            Correlated Event Timeline
+          </div>
+          <div id="impact-timeline-list" class="impact-timeline"></div>
+        </div>
+
+      </div>
+      <div class="modal-footer">
+        <button class="btn modal-cancel">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Action Confirmation Modal -->
+  <div id="modal-confirm" class="modal-backdrop">
+    <div class="modal-dialog" style="max-width: 440px;">
+      <div class="modal-header">
+        <div id="confirm-modal-title" class="modal-title">Confirm Action</div>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="confirm-modal-message" style="font-size: 13px; color: var(--text-main);"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn modal-cancel">Cancel</button>
+        <button id="btn-confirm-action" class="btn btn-danger">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Container -->
+  <div id="toast-container"></div>
+
+  <!-- App Script -->
+  <script src="/static/app.js"></script>
+</body>
+</html>

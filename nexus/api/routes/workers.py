@@ -48,3 +48,44 @@ def get_single_worker(worker_id: str, conn: sqlite3.Connection = Depends(get_db_
             detail=f"Worker '{worker_id}' not found.",
         )
     return _enrich_worker(worker)
+
+
+@router.post("/{worker_id}/start", summary="Start or restart a worker process")
+def start_worker(worker_id: str):
+    """
+    Spawns a new worker subprocess for the given worker_id.
+    Safe to call on dead or stale workers — the worker uses an upsert on registration,
+    so it will overwrite the dead record with its new PID.
+    """
+    import subprocess
+    import sys
+    import re
+    from pathlib import Path
+
+    # Validate worker_id to prevent injection (alphanumeric + hyphens only)
+    if not re.match(r'^[a-zA-Z0-9_-]{1,64}$', worker_id):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid worker_id. Use alphanumeric characters and hyphens only.",
+        )
+
+    project_root = str(Path(__file__).resolve().parent.parent.parent.parent)
+
+    try:
+        proc = subprocess.Popen(
+            [sys.executable, "-m", "nexus.workers.worker", worker_id],
+            cwd=project_root,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        return {
+            "result": "worker_started",
+            "worker_id": worker_id,
+            "pid": proc.pid,
+            "message": f"Worker '{worker_id}' process spawned with PID {proc.pid}.",
+        }
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to spawn worker process: {exc}",
+        )

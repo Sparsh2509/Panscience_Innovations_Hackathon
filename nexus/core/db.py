@@ -127,6 +127,7 @@ CREATE TABLE IF NOT EXISTS releases (
 CREATE INDEX IF NOT EXISTS idx_jobs_queued ON jobs (status, run_at, priority DESC);
 CREATE INDEX IF NOT EXISTS idx_jobs_lease_expiry ON jobs (status, lease_expires_at);
 CREATE INDEX IF NOT EXISTS idx_jobs_idempotency ON jobs (idempotency_key);
+CREATE INDEX IF NOT EXISTS idx_jobs_release_version ON jobs (release_version);
 CREATE INDEX IF NOT EXISTS idx_audit_job_id ON audit_events (job_id);
 CREATE INDEX IF NOT EXISTS idx_audit_created_at ON audit_events (created_at DESC);
 """

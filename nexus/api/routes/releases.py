@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 from nexus.api.dependencies import get_db_conn
+from nexus.services.release_impact import get_release_impact
 from nexus.services.release_service import (
     NoRollbackTargetError,
     ReleaseAlreadyExistsError,
@@ -17,6 +18,7 @@ from nexus.services.release_service import (
     create_release,
     deploy_release,
     get_active_release,
+    get_release,
     list_releases,
     rollback_release,
 )
@@ -118,3 +120,38 @@ def rollback(
         )
     except NoRollbackTargetError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+
+
+@router.get("/{version}", summary="Get release by version")
+def get_release_by_version(
+    version: str,
+    conn: sqlite3.Connection = Depends(get_db_conn),
+):
+    """Retrieves metadata for a specific release version."""
+    rel = get_release(conn, version)
+    if not rel:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Release '{version}' not found.",
+        )
+    return rel
+
+
+@router.get("/{version}/impact", summary="Get release-to-behaviour correlation (R-07)")
+def get_release_impact_metrics(
+    version: str,
+    conn: sqlite3.Connection = Depends(get_db_conn),
+):
+    """
+    Connects a release to the behaviour seen afterwards (R-07).
+    Returns correlated jobs (completed, failed, dead-lettered, retried), failure diagnostics,
+    worker fleet health (crashes, restarts), rollback events, milestone timestamps,
+    and a unified chronological event timeline.
+    """
+    try:
+        return get_release_impact(conn, version)
+    except ReleaseNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+

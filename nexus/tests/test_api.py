@@ -256,3 +256,33 @@ def test_chaos_endpoints(client):
     rb_res = test_client.post("/api/releases/rollback", json={"actor": "chaos-test"})
     assert rb_res.status_code == 200
     assert rb_res.json()["to_version"] == "v1.0.0"
+
+
+# 18. Dashboard and Static Asset Serving
+def test_dashboard_and_static_serving(client):
+    test_client, _ = client
+    # Main dashboard route
+    res_root = test_client.get("/")
+    assert res_root.status_code == 200
+    assert "NEXUS" in res_root.text
+    assert "CONTROL ROOM" in res_root.text
+
+    # Alternative dashboard route
+    res_dash = test_client.get("/dashboard")
+    assert res_dash.status_code == 200
+    assert "NEXUS" in res_dash.text
+
+    # Static CSS
+    res_css = test_client.get("/static/style.css")
+    assert res_css.status_code == 200
+    assert "NEXUS Control Room" in res_css.text
+
+    # Static JS
+    res_js = test_client.get("/static/app.js")
+    assert res_js.status_code == 200
+    assert "NEXUS Operator Dashboard" in res_js.text
+
+    # OpenAPI Docs still work
+    res_docs = test_client.get("/docs")
+    assert res_docs.status_code == 200
+
