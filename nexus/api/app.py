@@ -134,5 +134,17 @@ def serve_dashboard():
     """Alternative route for the operator dashboard."""
     return FileResponse(STATIC_DIR / "index.html")
 
+@app.get("/style.css", include_in_schema=False)
+def serve_css():
+    """Serves stylesheet directly."""
+    return FileResponse(STATIC_DIR / "style.css")
+
+@app.get("/app.js", include_in_schema=False)
+def serve_js():
+    """Serves frontend JS directly."""
+    return FileResponse(STATIC_DIR / "app.js")
+
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+
 

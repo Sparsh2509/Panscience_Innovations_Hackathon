@@ -1,9 +1,10 @@
 {
-  "version": 2,
+  "framework": null,
+  "buildCommand": null,
+  "outputDirectory": "nexus/static",
+  "cleanUrls": true,
   "rewrites": [
-    { "source": "/static/(.*)", "destination": "/nexus/static/$1" },
-    { "source": "/", "destination": "/nexus/static/index.html" },
-    { "source": "/dashboard", "destination": "/nexus/static/index.html" },
-    { "source": "/(.*)", "destination": "/nexus/static/$1" }
+    { "source": "/static/(.*)", "destination": "/$1" },
+    { "source": "/dashboard", "destination": "/index.html" }
   ]
 }
