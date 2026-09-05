@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: nexus-backend
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python scripts/start_production.py
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9

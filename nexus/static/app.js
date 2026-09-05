@@ -3,11 +3,20 @@
  * Interacts exclusively with local Phase 5 FastAPI endpoints.
  */
 
+// Backend API Base Configuration (Supports Vercel frontend talking to Render backend)
+function getApiBaseUrl() {
+  const saved = localStorage.getItem("nexus_api_base");
+  if (saved) return saved.replace(/\/+$/, "");
+  if (window.NEXUS_API_BASE) return window.NEXUS_API_BASE.replace(/\/+$/, "");
+  return "";
+}
+
 // Centralized API Client
 const api = {
   async get(endpoint) {
     try {
-      const res = await fetch(endpoint);
+      const url = `${getApiBaseUrl()}${endpoint}`;
+      const res = await fetch(url);
       api.setConnected(true);
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({}));
@@ -24,7 +33,8 @@ const api = {
 
   async post(endpoint, body = {}) {
     try {
-      const res = await fetch(endpoint, {
+      const url = `${getApiBaseUrl()}${endpoint}`;
+      const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -74,9 +84,17 @@ let allWorkersCache = [];
 
 // DOM Ready initialization
 document.addEventListener("DOMContentLoaded", () => {
+  updateApiConfigLabel();
   initEventListeners();
   refreshAll();
   startPolling();
+
+  // If on Vercel without a configured backend, prompt operator
+  if (window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1") {
+    if (!localStorage.getItem("nexus_api_base")) {
+      setTimeout(openApiConfigModal, 600);
+    }
+  }
 });
 
 function initEventListeners() {
@@ -241,6 +259,64 @@ function openSubmitJobModal() {
 
 function closeSubmitJobModal() {
   document.getElementById("modal-submit-job")?.classList.remove("open");
+}
+
+// Backend API Config Modal Controls (for Vercel deployment)
+function openApiConfigModal() {
+  const input = document.getElementById("input-api-base-url");
+  if (input) input.value = localStorage.getItem("nexus_api_base") || "";
+  document.getElementById("modal-api-config")?.classList.add("open");
+}
+
+function closeApiConfigModal() {
+  document.getElementById("modal-api-config")?.classList.remove("open");
+}
+
+function saveApiConfig() {
+  const input = document.getElementById("input-api-base-url");
+  const val = input ? input.value.trim() : "";
+  if (val) {
+    try {
+      new URL(val);
+      localStorage.setItem("nexus_api_base", val);
+      showToast("success", `Backend API URL saved: ${val}`);
+    } catch {
+      showToast("error", "Please enter a valid URL (e.g. https://nexus-backend.onrender.com)");
+      return;
+    }
+  } else {
+    localStorage.removeItem("nexus_api_base");
+    showToast("info", "Reset backend connection to local default.");
+  }
+  updateApiConfigLabel();
+  closeApiConfigModal();
+  refreshAll();
+}
+
+function resetApiConfig() {
+  localStorage.removeItem("nexus_api_base");
+  const input = document.getElementById("input-api-base-url");
+  if (input) input.value = "";
+  updateApiConfigLabel();
+  closeApiConfigModal();
+  showToast("info", "Backend connection reset to local default.");
+  refreshAll();
+}
+
+function updateApiConfigLabel() {
+  const label = document.getElementById("api-config-btn-label");
+  if (!label) return;
+  const saved = localStorage.getItem("nexus_api_base");
+  if (saved) {
+    try {
+      const hostname = new URL(saved).hostname;
+      label.textContent = hostname.length > 14 ? hostname.substring(0, 11) + "..." : hostname;
+    } catch {
+      label.textContent = "Remote API";
+    }
+  } else {
+    label.textContent = "API";
+  }
 }
 
 // Master refresh

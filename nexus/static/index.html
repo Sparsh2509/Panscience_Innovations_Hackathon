@@ -34,6 +34,9 @@
         <span>Auto-refresh:</span>
         <strong id="refresh-timer">3s</strong>
       </div>
+      <button id="btn-api-config" class="btn btn-sm btn-secondary" onclick="openApiConfigModal()" title="Configure Backend API URL">
+        <span>⚙️</span> <span id="api-config-btn-label">API</span>
+      </button>
       <button id="btn-manual-refresh" class="btn btn-sm btn-secondary" title="Refresh all data">
         <span>⟳</span> Refresh
       </button>
@@ -45,7 +48,7 @@
 
   <!-- Disconnected Banner -->
   <div id="api-disconnected-banner" class="disconnected-banner" style="display: none;">
-    ⚠️ Unable to reach NEXUS API. The dashboard is offline.
+    ⚠️ Unable to reach NEXUS API backend. If deployed on Vercel, <a href="#" onclick="openApiConfigModal(); return false;" style="color: #fff; text-decoration: underline; font-weight: bold; margin-left: 4px;">click here to set your Render Backend URL</a>.
   </div>
 
   <div class="app-layout">
@@ -543,6 +546,30 @@
       <div class="modal-footer">
         <button class="btn btn-secondary modal-cancel">Cancel</button>
         <button id="btn-confirm-action" class="btn btn-danger">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Backend API Configuration Modal (Vercel to Render) -->
+  <div id="modal-api-config" class="modal-backdrop">
+    <div class="modal-dialog" style="max-width: 480px;">
+      <div class="modal-header">
+        <div class="modal-title">⚙️ Backend API Configuration</div>
+        <button class="modal-close" onclick="closeApiConfigModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 12.5px; color: var(--text-muted); line-height: 1.4;">
+          When hosting on <strong>Vercel</strong>, connect to your <strong>Render backend</strong> by entering its live URL:
+        </p>
+        <div class="form-group" style="margin-top: 10px;">
+          <label>Render Backend Service URL</label>
+          <input type="url" id="input-api-base-url" class="form-control cell-mono" placeholder="https://nexus-backend.onrender.com">
+          <span style="font-size: 11px; color: var(--text-dim); margin-top: 4px;">Leave empty to connect locally (<span class="cell-mono">http://127.0.0.1:8000</span>).</span>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" onclick="resetApiConfig()">Reset to Local</button>
+        <button type="button" class="btn btn-primary" onclick="saveApiConfig()">Save & Connect</button>
       </div>
     </div>
   </div>

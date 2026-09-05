@@ -1,0 +1,9 @@
+{
+  "version": 2,
+  "rewrites": [
+    { "source": "/static/(.*)", "destination": "/nexus/static/$1" },
+    { "source": "/", "destination": "/nexus/static/index.html" },
+    { "source": "/dashboard", "destination": "/nexus/static/index.html" },
+    { "source": "/(.*)", "destination": "/nexus/static/$1" }
+  ]
+}
