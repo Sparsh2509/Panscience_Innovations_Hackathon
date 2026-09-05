@@ -14,7 +14,7 @@ import time
 BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
-from nexus.core.db import get_db
+from nexus.core.db import get_db, init_db
 from nexus.services.reaper import reap_expired_jobs
 from nexus.workers.supervisor import WorkerSupervisor
 
@@ -44,6 +44,9 @@ def main():
     host = "0.0.0.0"
 
     print(f"[RENDER] Starting NEXUS Production Platform on {host}:{port}...")
+
+    # Ensure schema and initial release are created before spawning workers
+    init_db()
 
     # Start worker supervisor in background daemon thread
     worker_thread = threading.Thread(target=run_workers, daemon=True)

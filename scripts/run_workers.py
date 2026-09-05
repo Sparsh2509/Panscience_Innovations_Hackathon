@@ -15,7 +15,7 @@ import time
 BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
-from nexus.core.db import get_db
+from nexus.core.db import get_db, init_db
 from nexus.services.reaper import reap_expired_jobs
 from nexus.workers.supervisor import WorkerSupervisor
 
@@ -24,6 +24,9 @@ def main():
     print("=" * 65)
     print("Starting NEXUS Worker Supervisor & Fleet (2 workers)...")
     print("=" * 65)
+
+    # Ensure schema and initial release exist before workers claim
+    init_db()
 
     supervisor = WorkerSupervisor(num_workers=2)
     supervisor.start()
