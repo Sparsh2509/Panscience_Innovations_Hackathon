@@ -8,412 +8,442 @@
 </head>
 <body>
 
-  <!-- Top Header -->
+  <!-- App Header -->
   <header class="app-header">
     <div class="brand-wrapper">
       <div class="brand-logo">NEXUS</div>
       <div>
-        <div style="font-weight: 700; font-size: 14px;">CONTROL ROOM</div>
-        <div class="brand-tagline">Reliable Local Work Platform</div>
+        <div class="brand-title">CONTROL ROOM</div>
+        <div class="brand-subtitle">Reliable Local Work Platform</div>
       </div>
     </div>
-    <div class="header-status-controls">
+
+    <!-- Active Release Pill in Header -->
+    <div class="header-release-badge" onclick="switchTab('releases')" title="Click to manage releases">
+      <span class="pulse-dot"></span>
+      <span>Active:</span>
+      <strong id="overview-active-release" class="cell-mono">v1.0.0</strong>
+    </div>
+
+    <div class="header-controls">
       <div class="status-indicator">
         <span id="connection-dot" class="status-dot connected"></span>
         <span id="connection-text">API Connected</span>
       </div>
-      <div class="refresh-countdown">
-        Auto-refresh: <span id="refresh-timer">3s</span>
+      <div class="refresh-pill">
+        <span>Auto-refresh:</span>
+        <strong id="refresh-timer">3s</strong>
       </div>
-      <button id="btn-manual-refresh" class="btn btn-sm">
+      <button id="btn-manual-refresh" class="btn btn-sm btn-secondary" title="Refresh all data">
         <span>⟳</span> Refresh
+      </button>
+      <button id="btn-open-submit-job" class="btn btn-sm btn-primary" onclick="openSubmitJobModal()">
+        <span>➕</span> Ingest Job
       </button>
     </div>
   </header>
 
   <!-- Disconnected Banner -->
-  <div id="api-disconnected-banner" style="display: none; background: var(--color-danger); color: #fff; text-align: center; padding: 10px; font-weight: 700; font-size: 13px; letter-spacing: 0.5px;">
+  <div id="api-disconnected-banner" class="disconnected-banner" style="display: none;">
     ⚠️ Unable to reach NEXUS API. The dashboard is offline.
   </div>
 
-  <div class="dashboard-container">
+  <div class="app-layout">
 
-    <!-- Section 1: System Overview Cards -->
-    <section class="overview-grid">
-      <!-- Jobs Pipeline Card -->
-      <div class="overview-card">
-        <div class="card-title">Jobs Pipeline</div>
-        <div class="metric-pipeline">
-          <div class="pipeline-item">
-            <span id="count-queued" class="val" style="color: var(--color-warning-bright);">0</span>
-            <span class="lbl">Queued</span>
-          </div>
-          <div class="pipeline-item">
-            <span id="count-running" class="val" style="color: var(--color-primary-hover);">0</span>
-            <span class="lbl">Running</span>
-          </div>
-          <div class="pipeline-item">
-            <span id="count-completed" class="val" style="color: var(--color-success-bright);">0</span>
-            <span class="lbl">Completed</span>
-          </div>
-          <div class="pipeline-item">
-            <span id="count-failed" class="val" style="color: var(--color-danger-bright);">0</span>
-            <span class="lbl">Failed</span>
-          </div>
-          <div class="pipeline-item">
-            <span id="count-dead-letter" class="val" style="color: var(--color-purple-bright);">0</span>
-            <span class="lbl">Dead Letter</span>
-          </div>
-        </div>
+    <!-- Top Key Metric Cards (Clean, balanced 4-metric row) -->
+    <section class="metrics-bar">
+      <!-- 1. Active Release Card -->
+      <div class="stat-card" onclick="switchTab('releases')">
+        <div class="stat-label">Active Release (R-06)</div>
+        <div class="stat-value text-primary" id="banner-active-release">v1.0.0</div>
+        <div class="stat-meta">Zero-touch rollback ready</div>
       </div>
 
-      <!-- Worker Fleet Card -->
-      <div class="overview-card">
-        <div class="card-title">Worker Fleet</div>
-        <div class="metric-pipeline">
-          <div class="pipeline-item">
-            <span id="count-workers-total" class="val">0</span>
-            <span class="lbl">Total</span>
-          </div>
-          <div class="pipeline-item">
-            <span id="count-workers-healthy" class="val" style="color: var(--color-success-bright);">0</span>
-            <span class="lbl">Healthy</span>
-          </div>
-          <div class="pipeline-item">
-            <span id="count-workers-dead" class="val" style="color: var(--color-danger-bright);">0</span>
-            <span class="lbl">Dead</span>
-          </div>
+      <!-- 2. Jobs Pipeline Stats -->
+      <div class="stat-card" onclick="switchTab('jobs')">
+        <div class="stat-label">Jobs Pipeline</div>
+        <div class="stat-pipeline">
+          <span title="Queued"><strong id="count-queued" style="color: var(--color-warning-bright);">0</strong> Queued</span>
+          <span>·</span>
+          <span title="Running"><strong id="count-running" style="color: var(--color-primary-hover);">0</strong> Running</span>
+          <span>·</span>
+          <span title="Completed"><strong id="count-completed" style="color: var(--color-success-bright);">0</strong> Done</span>
+          <span>·</span>
+          <span title="Failed"><strong id="count-failed" style="color: var(--color-danger-bright);">0</strong> Failed</span>
+          <span>·</span>
+          <span title="Dead-Letter"><strong id="count-dead-letter" style="color: var(--color-purple-bright);">0</strong> Dead</span>
         </div>
+        <div class="stat-meta">Durable execution & retries</div>
       </div>
 
-      <!-- Active Release Card -->
-      <div class="overview-card">
-        <div class="card-title">Production Release (R-06)</div>
-        <div style="display: flex; align-items: baseline; gap: 8px;">
-          <span id="overview-active-release" class="cell-mono" style="font-size: 24px; font-weight: 800; color: var(--color-primary-hover);">v1.0.0</span>
-          <span class="badge badge-completed">ACTIVE</span>
+      <!-- 3. Worker Fleet Stats -->
+      <div class="stat-card" onclick="switchTab('workers')">
+        <div class="stat-label">Worker Fleet</div>
+        <div class="stat-value">
+          <span id="count-workers-healthy" class="text-success">0</span>
+          <span style="font-size: 14px; font-weight: 400; color: var(--text-muted);">/ <span id="count-workers-total">0</span> Healthy</span>
         </div>
-        <div style="font-size: 11px; color: var(--text-muted);">Atomic one-action rollback ready</div>
+        <div class="stat-meta"><span id="count-workers-dead">0</span> dead or stale workers</div>
       </div>
 
-      <!-- Audit History Card -->
-      <div class="overview-card">
-        <div class="card-title">Audit Log Stream</div>
-        <div style="display: flex; align-items: baseline; gap: 8px;">
-          <span id="overview-audit-count" class="val" style="font-size: 24px; font-weight: 800;">0</span>
-          <span class="lbl">Recent Events</span>
-        </div>
-        <div style="font-size: 11px; color: var(--text-muted);">Append-only immutable record</div>
+      <!-- 4. Audit Trail Stats -->
+      <div class="stat-card" onclick="switchTab('audit')">
+        <div class="stat-label">Audit Trail</div>
+        <div class="stat-value" id="overview-audit-count">0</div>
+        <div class="stat-meta">Append-only immutable events</div>
       </div>
     </section>
 
-    <!-- Main Working Grid -->
-    <div class="main-grid">
+    <!-- Navigation Tabs Bar -->
+    <nav class="nav-tabs-bar">
+      <button class="nav-tab active" data-tab="jobs" onclick="switchTab('jobs')">
+        <span>📋</span> Jobs Queue
+      </button>
+      <button class="nav-tab" data-tab="releases" onclick="switchTab('releases')">
+        <span>📦</span> Releases & Rollback
+      </button>
+      <button class="nav-tab" data-tab="workers" onclick="switchTab('workers')">
+        <span>⚙️</span> Worker Fleet
+      </button>
+      <button class="nav-tab" data-tab="audit" onclick="switchTab('audit')">
+        <span>📜</span> Audit Trail
+      </button>
+      <button class="nav-tab" data-tab="chaos" onclick="switchTab('chaos')">
+        <span>🧪</span> Chaos Testing
+      </button>
+    </nav>
 
-      <!-- Left Column: Jobs, Submission, Workers -->
-      <div class="main-column">
+    <!-- Main Content Area -->
+    <main class="tab-content-area">
 
-        <!-- Section 2: Jobs Management -->
-        <section class="panel">
-          <div class="panel-header">
-            <div class="panel-title">
-              <span>📋</span> Jobs Queue & Pipeline
-            </div>
-            <div class="panel-actions">
-              <button class="btn btn-sm" onclick="loadOverviewAndJobs()">⟳ Refresh Jobs</button>
-            </div>
+      <!-- TAB 1: JOBS QUEUE -->
+      <div id="tab-jobs" class="tab-pane active">
+        <div class="pane-header">
+          <div>
+            <h2 class="pane-title">Jobs Queue & Execution Pipeline</h2>
+            <p class="pane-subtitle">Durable background jobs with lease ownership, idempotency, and retries.</p>
           </div>
-          <div class="filter-bar">
-            <button class="filter-btn active" data-status="ALL">ALL</button>
-            <button class="filter-btn" data-status="QUEUED">QUEUED</button>
-            <button class="filter-btn" data-status="RUNNING">RUNNING</button>
-            <button class="filter-btn" data-status="COMPLETED">COMPLETED</button>
-            <button class="filter-btn" data-status="FAILED">FAILED</button>
-            <button class="filter-btn" data-status="DEAD_LETTER">DEAD_LETTER</button>
-          </div>
-          <div class="table-container">
-            <table>
-              <thead>
-                <tr>
-                  <th>Job ID</th>
-                  <th>Job Type</th>
-                  <th>Status</th>
-                  <th>Priority</th>
-                  <th>Attempt</th>
-                  <th>Max Retries</th>
-                  <th>Release</th>
-                  <th>Created</th>
-                  <th>Last Error</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody id="jobs-table-body">
-                <tr><td colspan="10" style="text-align: center; color: var(--text-muted); padding: 20px;">Loading jobs...</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
-
-        <!-- Section 3: Submit Job -->
-        <section class="panel">
-          <div class="panel-header">
-            <div class="panel-title">
-              <span>➕</span> Ingest Background Job
-            </div>
-            <div style="font-size: 11px; color: var(--text-muted);">
-              Durable & Idempotent
-            </div>
-          </div>
-          <div class="panel-body">
-            <form id="form-submit-job">
-              <div class="form-row" style="margin-bottom: 12px;">
-                <div class="form-group" style="margin: 0;">
-                  <label>Quick Template</label>
-                  <select id="job-template-select" class="form-control">
-                    <option value="">-- Choose Payload Template --</option>
-                    <option value="echo">echo: {"message": "Hello from NEXUS"}</option>
-                    <option value="sleep">sleep: {"seconds": 2}</option>
-                    <option value="success">success: {"message": "Payment settled"}</option>
-                    <option value="fail">fail: {"message": "Simulated upstream timeout"}</option>
-                  </select>
-                </div>
-                <div class="form-group" style="margin: 0;">
-                  <label>Job Type *</label>
-                  <input type="text" id="input-job-type" class="form-control" placeholder="e.g. echo, sleep, process_invoice" required>
-                </div>
-              </div>
-
-              <div class="form-group">
-                <label>Payload (JSON)</label>
-                <textarea id="input-job-payload" class="form-control" rows="3" placeholder='{"message": "payload data"}'></textarea>
-              </div>
-
-              <div class="form-row">
-                <div class="form-group">
-                  <label>Idempotency Key (Prevents duplicates)</label>
-                  <input type="text" id="input-job-idempotency" class="form-control cell-mono" placeholder="e.g. req-invoice-98214">
-                </div>
-                <div class="form-group">
-                  <div class="form-row">
-                    <div>
-                      <label>Priority</label>
-                      <input type="number" id="input-job-priority" class="form-control" value="0">
-                    </div>
-                    <div>
-                      <label>Max Retries</label>
-                      <input type="number" id="input-job-retries" class="form-control" value="3" min="0" max="10">
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div style="display: flex; justify-content: flex-end;">
-                <button type="submit" class="btn btn-primary">
-                  <span>⚡</span> Submit Job
-                </button>
-              </div>
-            </form>
-          </div>
-        </section>
-
-        <!-- Section 4: Workers Monitor -->
-        <section class="panel">
-          <div class="panel-header">
-            <div class="panel-title">
-              <span>⚙️</span> Worker Fleet Monitor
-            </div>
-            <div class="panel-actions">
-              <button class="btn btn-sm" onclick="loadWorkers()">⟳ Refresh Workers</button>
-            </div>
-          </div>
-          <div class="panel-body">
-            <div id="workers-container" style="display: flex; flex-direction: column; gap: 10px;">
-              <div style="color: var(--text-muted);">Loading worker fleet...</div>
-            </div>
-          </div>
-        </section>
-
-      </div>
-
-      <!-- Right Column: Rollback, Releases, Chaos Lab, Audit Stream -->
-      <div class="sidebar-column">
-
-        <!-- ONE-ACTION ROLLBACK BANNER (R-06 Core Requirement) -->
-        <div class="rollback-banner">
-          <div class="rollback-info">
-            <div>
-              <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--color-danger-bright);">
-                Zero-Touch Rollback (R-06)
-              </div>
-              <div style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">
-                Current Active: <span id="banner-active-release" class="rollback-version-tag">v1.0.0</span>
-              </div>
-            </div>
-            <button id="btn-trigger-rollback" class="btn btn-danger">
-              <span>↺</span> ROLLBACK TO PREVIOUS RELEASE
+          <div class="pane-actions">
+            <button class="btn btn-sm btn-primary" onclick="openSubmitJobModal()">
+              <span>➕</span> Ingest New Job
+            </button>
+            <button class="btn btn-sm btn-secondary" onclick="loadOverviewAndJobs()">
+              <span>⟳</span> Refresh Jobs
             </button>
           </div>
         </div>
 
-        <!-- Section 5: Releases Panel -->
-        <section class="panel">
-          <div class="panel-header">
-            <div class="panel-title">
-              <span>📦</span> Release Management
-            </div>
-            <div class="panel-actions">
-              <button class="btn btn-sm" onclick="loadReleases()">⟳ Refresh</button>
-            </div>
+        <!-- Filter Bar -->
+        <div class="filter-bar">
+          <div class="filter-group">
+            <button class="filter-btn active" data-status="ALL">All Jobs</button>
+            <button class="filter-btn" data-status="QUEUED">Queued</button>
+            <button class="filter-btn" data-status="RUNNING">Running</button>
+            <button class="filter-btn" data-status="COMPLETED">Completed</button>
+            <button class="filter-btn" data-status="FAILED">Failed</button>
+            <button class="filter-btn" data-status="DEAD_LETTER">Dead Letter</button>
           </div>
-          <div class="table-container" style="max-height: 220px;">
+        </div>
+
+        <!-- Jobs Table -->
+        <div class="card-table">
+          <table>
+            <thead>
+              <tr>
+                <th>Job ID</th>
+                <th>Job Type</th>
+                <th>Status</th>
+                <th>Priority</th>
+                <th>Attempts</th>
+                <th>Max Retries</th>
+                <th>Release</th>
+                <th>Created</th>
+                <th>Last Error</th>
+                <th style="text-align: right;">Action</th>
+              </tr>
+            </thead>
+            <tbody id="jobs-table-body">
+              <tr><td colspan="10" class="table-empty">Loading jobs...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- TAB 2: RELEASES & ROLLBACK (R-06 & R-07) -->
+      <div id="tab-releases" class="tab-pane">
+        <div class="pane-header">
+          <div>
+            <h2 class="pane-title">Release Management & Zero-Touch Rollback</h2>
+            <p class="pane-subtitle">Version deployments, correlation inspection (R-07), and one-action rollback (R-06).</p>
+          </div>
+          <div class="pane-actions">
+            <button class="btn btn-sm btn-secondary" onclick="loadReleases()">⟳ Refresh</button>
+          </div>
+        </div>
+
+        <!-- Zero-Touch Rollback Banner -->
+        <div class="rollback-hero-card">
+          <div class="rollback-hero-content">
+            <div class="rollback-tag">Requirement R-06 — Atomic Rollback</div>
+            <h3 class="rollback-title">Emergency One-Action Rollback</h3>
+            <p class="rollback-desc">
+              If an incident occurs with the active release, you can take it back in one action.
+              NEXUS automatically discovers the previous stable release from deployment history and restores it atomically.
+            </p>
+          </div>
+          <button id="btn-trigger-rollback" class="btn btn-danger btn-lg">
+            <span>↺</span> Rollback Current Release
+          </button>
+        </div>
+
+        <!-- Releases Table -->
+        <div class="card-section">
+          <div class="section-title">Registered Releases</div>
+          <div class="card-table">
             <table>
               <thead>
                 <tr>
                   <th>Version</th>
                   <th>Status</th>
                   <th>Description</th>
-                  <th>By</th>
+                  <th>Deployed By</th>
                   <th>Deployed At</th>
-                  <th>Action</th>
+                  <th style="text-align: right;">Actions</th>
                 </tr>
               </thead>
               <tbody id="releases-table-body">
-                <tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 12px;">Loading releases...</td></tr>
+                <tr><td colspan="6" class="table-empty">Loading releases...</td></tr>
               </tbody>
             </table>
           </div>
-          <div style="padding: 12px 18px; border-top: 1px solid var(--border-color); background: rgba(0,0,0,0.15);">
-            <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; margin-bottom: 8px; color: var(--text-muted);">
-              Create Release Candidate
-            </div>
-            <form id="form-create-release">
-              <div class="form-row" style="margin-bottom: 8px;">
-                <input type="text" id="input-rel-version" class="form-control cell-mono" placeholder="Version (e.g. v1.1.0)" required>
-                <input type="text" id="input-rel-desc" class="form-control" placeholder="Description" required>
-              </div>
-              <div class="form-group" style="margin-bottom: 8px;">
-                <textarea id="input-rel-config" class="form-control" rows="2" placeholder='{"feature_flag": true}'></textarea>
-              </div>
-              <div style="display: flex; justify-content: flex-end;">
-                <button type="submit" class="btn btn-sm btn-primary">Create Release</button>
-              </div>
-            </form>
-          </div>
-        </section>
+        </div>
 
-        <!-- Section 7: Chaos / Failure Lab -->
-        <section class="panel chaos-panel">
-          <div class="panel-header">
-            <div class="panel-title" style="color: var(--color-danger-bright);">
-              <span>⚡</span> CHAOS / FAILURE LAB
-            </div>
-          </div>
-          <div class="panel-body">
-            <div class="chaos-warning">
-              <span>⚠️</span> Controlled demonstrations only. Safe local failure injection.
-            </div>
-
-            <!-- 1. Fail Job -->
-            <div style="margin-bottom: 14px;">
-              <label style="font-size: 11px; font-weight: 600; text-transform: uppercase; color: var(--text-muted); display: block; margin-bottom: 4px;">
-                1. Force Controlled Job Failure (Tests Exponential Retry & Dead-Letter)
-              </label>
-              <div class="chaos-action-row">
-                <select id="chaos-job-select" class="form-control cell-mono">
-                  <option value="">-- Select Job to Fail --</option>
-                </select>
-                <button id="btn-chaos-fail" class="btn btn-warning btn-sm">Fail Job</button>
+        <!-- Create Release Form Card -->
+        <div class="card-section" style="margin-top: 20px;">
+          <div class="section-title">Create Release Candidate</div>
+          <form id="form-create-release" class="clean-form">
+            <div class="form-row">
+              <div class="form-group">
+                <label>Version Tag *</label>
+                <input type="text" id="input-rel-version" class="form-control cell-mono" placeholder="e.g. v1.1.0" required>
+              </div>
+              <div class="form-group" style="flex: 2;">
+                <label>Release Description *</label>
+                <input type="text" id="input-rel-desc" class="form-control" placeholder="Summary of changes included in this release" required>
               </div>
             </div>
-
-            <!-- 2. Crash Worker -->
-            <div style="margin-bottom: 14px;">
-              <label style="font-size: 11px; font-weight: 600; text-transform: uppercase; color: var(--text-muted); display: block; margin-bottom: 4px;">
-                2. Hard Kill Worker Process (Tests Lease Expiry & Reaper Recovery)
-              </label>
-              <div class="chaos-action-row">
-                <select id="chaos-worker-select" class="form-control cell-mono">
-                  <option value="">-- Select Worker to Crash --</option>
-                </select>
-                <button id="btn-chaos-crash" class="btn btn-danger btn-sm">Kill Worker</button>
-              </div>
+            <div class="form-group">
+              <label>Configuration / Feature Flags (JSON)</label>
+              <textarea id="input-rel-config" class="form-control" rows="2" placeholder='{"feature_flag_billing_v2": true}'></textarea>
             </div>
+            <div style="display: flex; justify-content: flex-end;">
+              <button type="submit" class="btn btn-primary">Create Inactive Candidate</button>
+            </div>
+          </form>
+        </div>
+      </div>
 
-            <!-- 3. Simulate Release Incident -->
-            <div>
-              <label style="font-size: 11px; font-weight: 600; text-transform: uppercase; color: var(--text-muted); display: block; margin-bottom: 4px;">
-                3. Deploy Faulty Release (Demonstrates R-06 Rollback Need)
-              </label>
-              <button id="btn-chaos-incident" class="btn btn-warning" style="width: 100%;">
-                <span>💥</span> Simulate Release Incident (Deploys v1.1.0-buggy)
-              </button>
+      <!-- TAB 3: WORKER FLEET -->
+      <div id="tab-workers" class="tab-pane">
+        <div class="pane-header">
+          <div>
+            <h2 class="pane-title">Worker Fleet Monitor</h2>
+            <p class="pane-subtitle">Track active workers, heartbeat leases, and automatic crash recovery.</p>
+          </div>
+          <div class="pane-actions">
+            <button class="btn btn-sm btn-secondary" onclick="loadWorkers()">⟳ Refresh Workers</button>
+          </div>
+        </div>
+
+        <div id="workers-container" class="workers-grid">
+          <div class="table-empty">Loading worker fleet...</div>
+        </div>
+      </div>
+
+      <!-- TAB 4: AUDIT TRAIL -->
+      <div id="tab-audit" class="tab-pane">
+        <div class="pane-header">
+          <div>
+            <h2 class="pane-title">Immutable Audit Trail</h2>
+            <p class="pane-subtitle">Append-only log explaining what happened, who triggered it, and why.</p>
+          </div>
+          <div class="pane-actions">
+            <button class="btn btn-sm btn-secondary" onclick="loadAudit()">⟳ Refresh Stream</button>
+          </div>
+        </div>
+
+        <div class="card-section">
+          <div id="audit-stream" class="audit-stream-container">
+            <div class="table-empty">Loading audit events...</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 5: CHAOS TESTING -->
+      <div id="tab-chaos" class="tab-pane">
+        <div class="pane-header">
+          <div>
+            <h2 class="pane-title" style="color: var(--color-warning-bright);">Controlled Failure & Chaos Lab</h2>
+            <p class="pane-subtitle">Safely demonstrate system resilience, exponential retry backoff, reaper lease recovery, and one-action rollback.</p>
+          </div>
+        </div>
+
+        <div class="chaos-grid">
+          <!-- 1. Controlled Job Failure -->
+          <div class="chaos-card">
+            <div class="chaos-card-header">
+              <span class="chaos-badge">Chaos Test 1</span>
+              <h3>Force Job Failure</h3>
+            </div>
+            <p class="chaos-desc">
+              Forces a failure on a running job to demonstrate exponential backoff retry scheduling and transition to the dead-letter queue after max retries.
+            </p>
+            <div class="form-group">
+              <label>Select Active Job</label>
+              <select id="chaos-job-select" class="form-control cell-mono">
+                <option value="">-- Select Job to Fail --</option>
+              </select>
+            </div>
+            <button id="btn-chaos-fail" class="btn btn-warning" style="width: 100%;">
+              Trigger Controlled Failure
+            </button>
+          </div>
+
+          <!-- 2. Kill Worker Process -->
+          <div class="chaos-card">
+            <div class="chaos-card-header">
+              <span class="chaos-badge">Chaos Test 2</span>
+              <h3>Kill Worker Process</h3>
+            </div>
+            <p class="chaos-desc">
+              Terminates a worker abruptly via SIGTERM to test lease expiration, reaper orphan recovery, and supervisor auto-restart.
+            </p>
+            <div class="form-group">
+              <label>Select Target Worker</label>
+              <select id="chaos-worker-select" class="form-control cell-mono">
+                <option value="">-- Select Worker to Crash --</option>
+              </select>
+            </div>
+            <button id="btn-chaos-crash" class="btn btn-danger" style="width: 100%;">
+              Kill Worker (SIGTERM)
+            </button>
+          </div>
+
+          <!-- 3. Simulate Release Incident -->
+          <div class="chaos-card">
+            <div class="chaos-card-header">
+              <span class="chaos-badge">Chaos Test 3</span>
+              <h3>Simulate Release Incident</h3>
+            </div>
+            <p class="chaos-desc">
+              Deploys a buggy release candidate (<span class="cell-mono">v1.1.0-buggy</span>) into production to test the immediate need for R-06 one-action rollback.
+            </p>
+            <div style="flex: 1;"></div>
+            <button id="btn-chaos-incident" class="btn btn-warning" style="width: 100%;">
+              💥 Deploy Faulty Release (v1.1.0-buggy)
+            </button>
+          </div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+  <!-- Ingest Job Modal -->
+  <div id="modal-submit-job" class="modal-backdrop">
+    <div class="modal-dialog" style="max-width: 540px;">
+      <div class="modal-header">
+        <div class="modal-title">Ingest Background Job</div>
+        <button class="modal-close" onclick="closeSubmitJobModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="form-submit-job">
+          <div class="form-group">
+            <label>Quick Template</label>
+            <select id="job-template-select" class="form-control">
+              <option value="">-- Choose Payload Template --</option>
+              <option value="echo">echo: {"message": "Hello from NEXUS"}</option>
+              <option value="sleep">sleep: {"seconds": 2}</option>
+              <option value="success">success: {"message": "Payment settled"}</option>
+              <option value="fail">fail: {"message": "Simulated upstream timeout"}</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label>Job Type *</label>
+            <input type="text" id="input-job-type" class="form-control" placeholder="e.g. echo, sleep, process_invoice" required>
+          </div>
+
+          <div class="form-group">
+            <label>Payload (JSON)</label>
+            <textarea id="input-job-payload" class="form-control cell-mono" rows="3" placeholder='{"message": "payload data"}'></textarea>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label>Idempotency Key (Optional)</label>
+              <input type="text" id="input-job-idempotency" class="form-control cell-mono" placeholder="e.g. req-inv-98214">
+            </div>
+            <div class="form-group">
+              <label>Priority</label>
+              <input type="number" id="input-job-priority" class="form-control" value="0">
+            </div>
+            <div class="form-group">
+              <label>Max Retries</label>
+              <input type="number" id="input-job-retries" class="form-control" value="3" min="0" max="10">
             </div>
           </div>
-        </section>
 
-        <!-- Section 6: Audit Log Stream -->
-        <section class="panel">
-          <div class="panel-header">
-            <div class="panel-title">
-              <span>📜</span> Audit Trail (What, Who, Why)
-            </div>
-            <div class="panel-actions">
-              <button class="btn btn-sm" onclick="loadAudit()">⟳ Refresh</button>
-            </div>
+          <div class="modal-footer" style="padding: 12px 0 0 0; margin-top: 12px;">
+            <button type="button" class="btn btn-secondary modal-cancel" onclick="closeSubmitJobModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary"><span>⚡</span> Ingest Job</button>
           </div>
-          <div class="panel-body" style="padding: 10px;">
-            <div id="audit-stream" class="audit-stream">
-              <div style="color: var(--text-muted); padding: 12px;">Loading audit stream...</div>
-            </div>
-          </div>
-        </section>
-
+        </form>
       </div>
     </div>
   </div>
 
   <!-- Job Details Modal -->
   <div id="modal-job-details" class="modal-backdrop">
-    <div class="modal-dialog">
+    <div class="modal-dialog" style="max-width: 680px;">
       <div class="modal-header">
-        <div class="modal-title">Job Inspection & Timeline</div>
+        <div class="modal-title">Job Inspection: <span id="modal-job-id" class="cell-mono text-primary"></span></div>
         <button class="modal-close">&times;</button>
       </div>
       <div class="modal-body">
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 12px; background: rgba(0,0,0,0.25); padding: 12px; border-radius: 6px; border: 1px solid var(--border-color);">
-          <div><strong>Job ID:</strong> <span id="modal-job-id" class="cell-mono"></span></div>
-          <div><strong>Job Type:</strong> <span id="modal-job-type"></span></div>
-          <div><strong>Status:</strong> <span id="modal-job-status"></span></div>
-          <div><strong>Priority:</strong> <span id="modal-job-priority" class="cell-mono"></span></div>
-          <div><strong>Attempt Count:</strong> <span id="modal-job-attempts" class="cell-mono"></span></div>
-          <div><strong>Max Retries:</strong> <span id="modal-job-max-retries" class="cell-mono"></span></div>
-          <div><strong>Release Version:</strong> <span id="modal-job-release" class="cell-mono"></span></div>
-          <div><strong>Leased Worker:</strong> <span id="modal-job-worker" class="cell-mono"></span></div>
-          <div><strong>Lease Expiration:</strong> <span id="modal-job-lease-exp" class="cell-mono"></span></div>
-          <div><strong>Created At:</strong> <span id="modal-job-created" style="color: var(--text-muted);"></span></div>
-          <div style="grid-column: 1 / -1;"><strong>Updated At:</strong> <span id="modal-job-updated" style="color: var(--text-muted);"></span></div>
-          <div style="grid-column: 1 / -1;">
-            <strong>Last Error:</strong> <span id="modal-job-error" style="color: var(--color-danger-bright);"></span>
+        <div class="job-meta-grid">
+          <div><span class="meta-label">Job Type:</span> <strong id="modal-job-type"></strong></div>
+          <div><span class="meta-label">Status:</span> <span id="modal-job-status"></span></div>
+          <div><span class="meta-label">Priority:</span> <span id="modal-job-priority" class="cell-mono"></span></div>
+          <div><span class="meta-label">Attempts:</span> <span id="modal-job-attempts" class="cell-mono"></span> / <span id="modal-job-max-retries" class="cell-mono"></span></div>
+          <div><span class="meta-label">Release Version:</span> <span id="modal-job-release" class="cell-mono"></span></div>
+          <div><span class="meta-label">Leased Worker:</span> <span id="modal-job-worker" class="cell-mono"></span></div>
+          <div><span class="meta-label">Created At:</span> <span id="modal-job-created" style="color: var(--text-muted);"></span></div>
+          <div><span class="meta-label">Updated At:</span> <span id="modal-job-updated" style="color: var(--text-muted);"></span></div>
+          <div style="display: none;" id="modal-job-lease-exp"></div>
+          <div id="modal-job-error-row" style="grid-column: 1 / -1; display: none;">
+            <span class="meta-label" style="color: var(--color-danger-bright);">Last Error:</span>
+            <div id="modal-job-error" style="color: var(--color-danger-bright); font-family: var(--font-mono); margin-top: 4px;"></div>
           </div>
         </div>
 
         <div>
-          <strong style="font-size: 12px; text-transform: uppercase; color: var(--text-muted);">Payload:</strong>
-          <pre id="modal-job-payload" style="background: var(--bg-input); padding: 8px 12px; border-radius: 4px; border: 1px solid var(--border-color); font-size: 11px; overflow-x: auto; margin-top: 4px;"></pre>
+          <label class="section-label">Payload JSON</label>
+          <pre id="modal-job-payload" class="code-preview"></pre>
         </div>
 
         <div>
-          <strong style="font-size: 12px; text-transform: uppercase; color: var(--text-muted);">Result:</strong>
-          <pre id="modal-job-result" style="background: var(--bg-input); padding: 8px 12px; border-radius: 4px; border: 1px solid var(--border-color); font-size: 11px; overflow-x: auto; margin-top: 4px;"></pre>
+          <label class="section-label">Result JSON</label>
+          <pre id="modal-job-result" class="code-preview"></pre>
         </div>
 
         <div>
-          <strong style="font-size: 12px; text-transform: uppercase; color: var(--text-muted); display: block; margin-bottom: 6px;">Audit Timeline ("What happened and why"):</strong>
-          <div id="modal-job-timeline"></div>
+          <label class="section-label">Audit Decision Trail</label>
+          <div id="modal-job-timeline" class="mini-timeline"></div>
         </div>
       </div>
       <div class="modal-footer">
-        <button class="btn modal-cancel">Close</button>
+        <button class="btn btn-secondary modal-cancel">Close</button>
       </div>
     </div>
   </div>
@@ -424,7 +454,7 @@
       <div class="modal-header">
         <div style="display: flex; align-items: center; gap: 10px;">
           <span style="font-size: 18px;">📊</span>
-          <div class="modal-title">Release Impact Analysis: <span id="impact-modal-version" class="cell-mono text-primary" style="color: var(--color-primary-hover);"></span></div>
+          <div class="modal-title">Release Impact: <span id="impact-modal-version" class="cell-mono text-primary"></span></div>
           <span id="impact-health-badge" class="badge"></span>
         </div>
         <button class="modal-close">&times;</button>
@@ -495,7 +525,7 @@
 
       </div>
       <div class="modal-footer">
-        <button class="btn modal-cancel">Close</button>
+        <button class="btn btn-secondary modal-cancel">Close</button>
       </div>
     </div>
   </div>
@@ -508,10 +538,10 @@
         <button class="modal-close">&times;</button>
       </div>
       <div class="modal-body">
-        <div id="confirm-modal-message" style="font-size: 13px; color: var(--text-main);"></div>
+        <div id="confirm-modal-message" style="font-size: 13px; color: var(--text-main); line-height: 1.5;"></div>
       </div>
       <div class="modal-footer">
-        <button class="btn modal-cancel">Cancel</button>
+        <button class="btn btn-secondary modal-cancel">Cancel</button>
         <button id="btn-confirm-action" class="btn btn-danger">Confirm</button>
       </div>
     </div>

@@ -98,50 +98,57 @@ function initEventListeners() {
 
   // Submit Job Form
   const jobForm = document.getElementById("form-submit-job");
-  jobForm?.addEventListener("submit", handleJobSubmit);
+  if (jobForm) {
+    jobForm.addEventListener("submit", handleCreateJob);
+  }
 
-  // Pre-fill Payload Templates
+  // Template select quick fill
   document.getElementById("job-template-select")?.addEventListener("change", (e) => {
-    const payloadArea = document.getElementById("input-job-payload");
-    const jobTypeInput = document.getElementById("input-job-type");
-    const val = e.target.value;
-    if (val === "sleep") {
-      jobTypeInput.value = "sleep";
-      payloadArea.value = JSON.stringify({ seconds: 2 }, null, 2);
-    } else if (val === "echo") {
-      jobTypeInput.value = "echo";
-      payloadArea.value = JSON.stringify({ message: "Hello from NEXUS" }, null, 2);
-    } else if (val === "success") {
-      jobTypeInput.value = "success";
-      payloadArea.value = JSON.stringify({ message: "Payment settled" }, null, 2);
-    } else if (val === "fail") {
-      jobTypeInput.value = "fail";
-      payloadArea.value = JSON.stringify({ message: "Simulated upstream timeout" }, null, 2);
+    const tpl = e.target.value;
+    const typeInput = document.getElementById("input-job-type");
+    const payloadInput = document.getElementById("input-job-payload");
+    const idempInput = document.getElementById("input-job-idempotency");
+
+    if (tpl === "echo") {
+      typeInput.value = "echo";
+      payloadInput.value = JSON.stringify({ message: "Hello from NEXUS" }, null, 2);
+      idempInput.value = `echo-${Date.now()}`;
+    } else if (tpl === "sleep") {
+      typeInput.value = "sleep";
+      payloadInput.value = JSON.stringify({ seconds: 2 }, null, 2);
+      idempInput.value = `sleep-${Date.now()}`;
+    } else if (tpl === "success") {
+      typeInput.value = "payment_settle";
+      payloadInput.value = JSON.stringify({ invoice_id: "INV-98214", amount: 249.99 }, null, 2);
+      idempInput.value = `pay-${Date.now()}`;
+    } else if (tpl === "fail") {
+      typeInput.value = "fail";
+      payloadInput.value = JSON.stringify({ message: "Simulated upstream timeout" }, null, 2);
+      idempInput.value = `fail-${Date.now()}`;
     }
   });
 
   // Create Release Form
-  const releaseForm = document.getElementById("form-create-release");
-  releaseForm?.addEventListener("submit", handleCreateRelease);
+  document.getElementById("form-create-release")?.addEventListener("submit", handleCreateRelease);
 
-  // Rollback Button (R-06)
+  // Trigger Rollback Button (R-06 Core Requirement)
   document.getElementById("btn-trigger-rollback")?.addEventListener("click", () => {
+    const activeVer = document.getElementById("banner-active-release")?.textContent || "current";
     confirmAction(
-      "Confirm One-Action Rollback (R-06)",
-      "Rollback the current release to the previous deployment?",
+      "Execute Zero-Touch Rollback (R-06)",
+      `Take back release '${activeVer}' in one action and restore the previous release?`,
       async () => {
         try {
           const res = await api.post("/api/releases/rollback", {
             actor: "operator",
-            reason: "One-action rollback triggered from dashboard",
+            reason: "Manual one-action rollback via dashboard",
           });
-          showToast("success", `Rollback successful: ${res.from_version} → ${res.to_version}`);
+          showToast("success", `Rollback completed: Restored to ${res.to_version} from ${res.from_version}`);
           refreshAll();
         } catch (err) {
           showToast("error", `Rollback failed: ${err.message}`);
         }
-      },
-      "Rollback"
+      }
     );
   });
 
@@ -154,12 +161,14 @@ function initEventListeners() {
       return;
     }
     confirmAction(
-      "Force Job Failure",
-      `Inject controlled failure into job ${jobId.substring(0, 8)}...?`,
+      "Simulate Controlled Job Failure",
+      `Force a failure on job '${jobId}' to test exponential retry and dead-letter handling?`,
       async () => {
         try {
-          const res = await api.post(`/api/chaos/fail-job/${jobId}`);
-          showToast("warning", `Failure injected. Job status: ${res.new_status} (attempt ${res.attempt_count}/${res.max_retries})`);
+          const res = await api.post(`/api/chaos/fail-job/${jobId}`, {
+            error_msg: "Controlled chaos failure injection",
+          });
+          showToast("warning", `Job failed: status is now ${res.job.status} (attempt ${res.job.attempt_count})`);
           refreshAll();
         } catch (err) {
           showToast("error", `Chaos failed: ${err.message}`);
@@ -201,6 +210,7 @@ function initEventListeners() {
           const res = await api.post("/api/chaos/simulate-release-incident");
           showToast("error", `Incident active: ${res.active_release} deployed! Recommended: trigger Rollback.`);
           refreshAll();
+          switchTab("releases");
         } catch (err) {
           showToast("error", `Incident simulation failed: ${err.message}`);
         }
@@ -212,6 +222,25 @@ function initEventListeners() {
   document.querySelectorAll(".modal-close, .modal-cancel").forEach((btn) => {
     btn.addEventListener("click", closeAllModals);
   });
+}
+
+// Tab Switching
+function switchTab(tabName) {
+  document.querySelectorAll(".nav-tab").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.tab === tabName);
+  });
+  document.querySelectorAll(".tab-pane").forEach((pane) => {
+    pane.classList.toggle("active", pane.id === `tab-${tabName}`);
+  });
+}
+
+// Submit Job Modal Controls
+function openSubmitJobModal() {
+  document.getElementById("modal-submit-job")?.classList.add("open");
+}
+
+function closeSubmitJobModal() {
+  document.getElementById("modal-submit-job")?.classList.remove("open");
 }
 
 // Master refresh
@@ -266,39 +295,48 @@ function renderJobs(jobs) {
     : jobs.filter((j) => j.status === currentStatusFilter);
 
   if (filtered.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="10" style="text-align: center; color: var(--text-muted); padding: 24px;">No jobs found with status '${currentStatusFilter}'.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="10" class="table-empty">No jobs found in status: ${currentStatusFilter}</td></tr>`;
     return;
   }
 
   tbody.innerHTML = filtered.map((j) => {
-    const timeStr = j.created_at ? new Date(j.created_at * 1000).toLocaleTimeString() : "-";
-    const statusBadge = getStatusBadge(j.status);
-    const shortId = j.id ? j.id.substring(0, 8) : "";
-    const lastErr = j.last_error ? escapeHtml(j.last_error.substring(0, 45) + (j.last_error.length > 45 ? "..." : "")) : "-";
+    const shortId = j.id.substring(0, 8);
+    const createdStr = new Date(j.created_at * 1000).toLocaleTimeString();
+    const errorSnip = j.last_error
+      ? `<span class="cell-mono" style="color: var(--color-danger-bright); font-size: 11px;" title="${escapeHtml(j.last_error)}">${escapeHtml(j.last_error.substring(0, 24))}...</span>`
+      : `<span style="color: var(--text-dim);">-</span>`;
+
+    const retryBtn = (j.status === "FAILED" || j.status === "DEAD_LETTER")
+      ? `<button class="btn btn-sm btn-secondary" style="padding: 2px 8px; font-size: 11px;" onclick="retryJobDirect('${j.id}')">↺ Retry</button>`
+      : "";
 
     return `
-      <tr class="clickable-row" onclick="showJobDetails('${j.id}')">
-        <td class="cell-mono">${shortId}</td>
+      <tr>
+        <td class="cell-mono" style="font-weight: 700; color: var(--color-primary-hover); cursor: pointer;" onclick="openJobDetails('${j.id}')" title="Inspect job">${shortId}</td>
         <td><strong>${escapeHtml(j.job_type)}</strong></td>
-        <td>${statusBadge}</td>
-        <td>${j.priority || 0}</td>
+        <td>${getStatusBadge(j.status)}</td>
+        <td class="cell-mono">${j.priority !== undefined ? j.priority : 0}</td>
         <td class="cell-mono">${j.attempt_count}</td>
         <td class="cell-mono">${j.max_retries}</td>
-        <td class="cell-mono">${escapeHtml(j.release_version || "v1.0.0")}</td>
-        <td style="color: var(--text-muted);">${timeStr}</td>
-        <td class="cell-mono" style="color: var(--color-danger-bright);" title="${escapeHtml(j.last_error || '')}">${lastErr}</td>
-        <td><button class="btn btn-sm" onclick="event.stopPropagation(); showJobDetails('${j.id}')">Details</button></td>
+        <td class="cell-mono"><span class="badge badge-idle">${escapeHtml(j.release_version || "v1.0.0")}</span></td>
+        <td style="color: var(--text-muted); font-size: 11.5px;">${createdStr}</td>
+        <td>${errorSnip}</td>
+        <td style="text-align: right;">
+          <div style="display: inline-flex; gap: 6px;">
+            ${retryBtn}
+            <button class="btn btn-sm btn-secondary" style="padding: 2px 8px; font-size: 11px;" onclick="openJobDetails('${j.id}')">Inspect</button>
+          </div>
+        </td>
       </tr>
     `;
   }).join("");
 }
 
-// Section 3: Job Submission
-async function handleJobSubmit(e) {
+async function handleCreateJob(e) {
   e.preventDefault();
   const jobType = document.getElementById("input-job-type").value.trim();
   const payloadRaw = document.getElementById("input-job-payload").value.trim();
-  const idempotencyKey = document.getElementById("input-job-idempotency").value.trim() || null;
+  const idempotencyKey = document.getElementById("input-job-idempotency").value.trim() || undefined;
   const priority = parseInt(document.getElementById("input-job-priority").value, 10) || 0;
   const maxRetries = parseInt(document.getElementById("input-job-retries").value, 10) || 3;
 
@@ -307,7 +345,7 @@ async function handleJobSubmit(e) {
     try {
       payload = JSON.parse(payloadRaw);
     } catch {
-      showToast("error", "Invalid JSON payload.");
+      showToast("error", "Payload must be valid JSON.");
       return;
     }
   }
@@ -322,18 +360,30 @@ async function handleJobSubmit(e) {
     });
 
     if (res.deduplicated) {
-      showToast("info", `Idempotency match: existing job ${res.job.id.substring(0, 8)} returned (Deduplicated: true).`);
+      showToast("info", `Idempotent request: Returned existing job ${res.job.id.substring(0, 8)}`);
     } else {
-      showToast("success", `Job ${res.job.id.substring(0, 8)} enqueued successfully.`);
+      showToast("success", `Job ${res.job.id.substring(0, 8)} enqueued successfully!`);
     }
 
+    closeSubmitJobModal();
+    document.getElementById("form-submit-job").reset();
     refreshAll();
   } catch (err) {
-    showToast("error", `Failed to submit job: ${err.message}`);
+    showToast("error", `Failed to enqueue job: ${err.message}`);
   }
 }
 
-// Section 4: Workers
+async function retryJobDirect(jobId) {
+  try {
+    const res = await api.post(`/api/jobs/${jobId}/retry`);
+    showToast("success", `Job ${jobId.substring(0, 8)} re-queued for execution!`);
+    refreshAll();
+  } catch (err) {
+    showToast("error", `Retry failed: ${err.message}`);
+  }
+}
+
+// Section 4: Worker Fleet
 async function loadWorkers() {
   try {
     const workers = await api.get("/api/workers");
@@ -341,12 +391,10 @@ async function loadWorkers() {
     renderWorkers(workers);
     updateChaosWorkerSelect(workers);
 
-    // Update worker counts in overview
-    let total = workers.length;
-    let healthy = workers.filter((w) => w.healthy).length;
-    let dead = workers.filter((w) => w.status === "DEAD").length;
+    const healthy = workers.filter((w) => w.healthy).length;
+    const dead = workers.filter((w) => !w.healthy).length;
 
-    document.getElementById("count-workers-total").textContent = total;
+    document.getElementById("count-workers-total").textContent = workers.length;
     document.getElementById("count-workers-healthy").textContent = healthy;
     document.getElementById("count-workers-dead").textContent = dead;
   } catch (err) {
@@ -359,36 +407,37 @@ function renderWorkers(workers) {
   if (!container) return;
 
   if (workers.length === 0) {
-    container.innerHTML = `<div style="color: var(--text-muted); padding: 16px;">No workers registered. Start workers with supervisor.</div>`;
+    container.innerHTML = `<div class="table-empty">No workers registered in fleet. Start workers with supervisor.</div>`;
     return;
   }
 
   container.innerHTML = workers.map((w) => {
-    const badgeClass = w.status === "IDLE" ? "badge-idle" : w.status === "BUSY" ? "badge-busy" : "badge-dead";
+    const badgeClass = w.status === "IDLE" ? "badge-idle" : w.status === "BUSY" ? "badge-running" : "badge-failed";
     const healthPill = w.healthy
       ? `<span class="badge badge-completed">Healthy</span>`
       : `<span class="badge badge-failed">Dead / Stale</span>`;
     const startedStr = w.started_at ? new Date(w.started_at * 1000).toLocaleTimeString() : "-";
-    const borderColor = w.healthy ? "var(--border-color)" : "var(--color-danger)";
+    const borderStyle = w.healthy ? "" : "border-color: var(--color-danger);";
     const restartBtn = !w.healthy
-      ? `<button class="btn btn-sm" style="background:#238636;border-color:#238636;color:#fff;" onclick="restartWorker('${w.id}')">↺ Restart</button>`
+      ? `<button class="btn btn-sm btn-primary" onclick="restartWorker('${escapeHtml(w.id)}')">↺ Restart</button>`
       : "";
 
     return `
-      <div style="background: rgba(0,0,0,0.25); border: 1px solid ${borderColor}; border-radius: var(--radius-sm); padding: 12px; display: flex; justify-content: space-between; align-items: center;">
-        <div>
-          <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
-            <strong class="cell-mono">${escapeHtml(w.id)}</strong>
+      <div class="worker-card" style="${borderStyle}">
+        <div class="worker-card-header">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <strong class="cell-mono" style="font-size: 14px;">${escapeHtml(w.id)}</strong>
             <span class="badge ${badgeClass}">${w.status}</span>
             ${healthPill}
           </div>
-          <div style="font-size: 11px; color: var(--text-muted);" class="cell-mono">
-            PID: ${w.pid} | Started: ${startedStr} | Heartbeat Age: ${w.heartbeat_age_seconds}s | Current Job: ${w.current_job_id ? w.current_job_id.substring(0, 8) : "None"}
+          <div style="display: flex; gap: 6px;">
+            ${restartBtn}
+            <button class="btn btn-sm btn-danger" onclick="quickCrashWorker('${escapeHtml(w.id)}')">Kill</button>
           </div>
         </div>
-        <div style="display:flex;gap:8px;align-items:center;">
-          ${restartBtn}
-          <button class="btn btn-sm btn-danger" onclick="quickCrashWorker('${w.id}')">Crash (Kill)</button>
+        <div class="worker-card-body cell-mono">
+          <div>PID: <strong>${w.pid}</strong> | Started: <strong>${startedStr}</strong></div>
+          <div>Heartbeat Age: <strong>${w.heartbeat_age_seconds}s</strong> | Current Job: <strong>${w.current_job_id ? escapeHtml(w.current_job_id.substring(0, 8)) : "None"}</strong></div>
         </div>
       </div>
     `;
@@ -403,7 +452,6 @@ async function loadReleases() {
       api.get("/api/releases/active"),
     ]);
 
-    // Update active release badge
     const activeVer = active?.version || "v1.0.0";
     document.getElementById("overview-active-release").textContent = activeVer;
     document.getElementById("banner-active-release").textContent = activeVer;
@@ -419,20 +467,20 @@ async function loadReleases() {
       const timeStr = r.deployed_at ? new Date(r.deployed_at * 1000).toLocaleString() : "-";
 
       const actionBtn = isActive
-        ? `<span style="font-size: 11px; color: var(--color-success-bright); font-weight: 600;">Current Active</span>`
+        ? `<span style="font-size: 11.5px; color: var(--color-success-bright); font-weight: 700;">● Active Release</span>`
         : `<button class="btn btn-sm btn-primary" onclick="deployReleaseVersion('${r.version}')">Deploy</button>`;
 
-      const impactBtn = `<button class="btn btn-sm" style="background:#21262d;border:1px solid #30363d;color:var(--text-main);padding:3px 8px;font-size:11px;" onclick="openReleaseImpactModal('${escapeHtml(r.version)}')">📊 Impact</button>`;
+      const impactBtn = `<button class="btn btn-sm btn-secondary" onclick="openReleaseImpactModal('${escapeHtml(r.version)}')">📊 View Impact</button>`;
 
       return `
         <tr>
-          <td class="cell-mono"><strong>${escapeHtml(r.version)}</strong></td>
+          <td class="cell-mono" style="font-weight: 700;">${escapeHtml(r.version)}</td>
           <td>${activeBadge}</td>
           <td>${escapeHtml(r.description || "")}</td>
-          <td class="cell-mono">${escapeHtml(r.deployed_by || "-")}</td>
-          <td style="color: var(--text-muted);">${timeStr}</td>
-          <td>
-            <div style="display: flex; gap: 6px; align-items: center;">
+          <td class="cell-mono" style="color: var(--text-muted);">${escapeHtml(r.deployed_by || "-")}</td>
+          <td style="color: var(--text-muted); font-size: 11.5px;">${timeStr}</td>
+          <td style="text-align: right;">
+            <div style="display: inline-flex; gap: 8px; align-items: center;">
               ${impactBtn}
               ${actionBtn}
             </div>
@@ -456,7 +504,7 @@ async function handleCreateRelease(e) {
     try {
       config = JSON.parse(configRaw);
     } catch {
-      showToast("error", "Invalid JSON config.");
+      showToast("error", "Configuration must be valid JSON.");
       return;
     }
   }
@@ -466,7 +514,7 @@ async function handleCreateRelease(e) {
       version,
       description,
       config,
-      deployed_by: "operator-ui",
+      deployed_by: "operator",
     });
     showToast("success", `Release ${version} created.`);
     document.getElementById("form-create-release").reset();
@@ -479,7 +527,7 @@ async function handleCreateRelease(e) {
 async function deployReleaseVersion(version) {
   confirmAction(
     "Confirm Deployment",
-    `Deploy release '${version}' as the active release?`,
+    `Deploy release '${version}' as the active production release?`,
     async () => {
       try {
         await api.post(`/api/releases/${version}/deploy`, {
@@ -498,14 +546,14 @@ async function deployReleaseVersion(version) {
 // Section 6: Audit Log
 async function loadAudit() {
   try {
-    const events = await api.get("/api/audit?limit=25");
+    const events = await api.get("/api/audit?limit=30");
     const container = document.getElementById("audit-stream");
     if (!container) return;
 
     document.getElementById("overview-audit-count").textContent = events.length;
 
     if (events.length === 0) {
-      container.innerHTML = `<div style="color: var(--text-muted); padding: 12px;">No audit events recorded.</div>`;
+      container.innerHTML = `<div class="table-empty">No audit events recorded.</div>`;
       return;
     }
 
@@ -514,16 +562,16 @@ async function loadAudit() {
       const detailsJson = JSON.stringify(ev.details || {}, null, 2);
 
       return `
-        <div class="audit-entry severity-${ev.severity}" onclick="toggleAuditDetail(${idx})" style="cursor: pointer;" title="Click to toggle full JSON details">
+        <div class="audit-entry severity-${ev.severity}" onclick="toggleAuditDetail(${idx})" style="cursor: pointer;" title="Click to toggle JSON details">
           <div class="audit-header">
             <span class="audit-type">${escapeHtml(ev.event_type)}</span>
-            <span>${timeStr}</span>
+            <span class="cell-mono">${timeStr}</span>
           </div>
-          <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 2px;">
-            Actor: <strong>${escapeHtml(ev.actor)}</strong> ${ev.job_id ? `| Job: <span class="cell-mono">${ev.job_id.substring(0, 8)}</span>` : ""}
+          <div style="font-size: 11.5px; color: var(--text-muted); margin-bottom: 2px;">
+            Actor: <strong>${escapeHtml(ev.actor)}</strong> ${ev.job_id ? `| Job: <span class="cell-mono" style="color: var(--color-primary-hover);">${ev.job_id.substring(0, 8)}</span>` : ""}
           </div>
           <div id="audit-preview-${idx}" class="audit-details">${escapeHtml(JSON.stringify(ev.details || {}))}</div>
-          <pre id="audit-full-${idx}" class="cell-mono" style="display: none; font-size: 11px; background: rgba(0,0,0,0.3); padding: 6px; border-radius: 4px; margin-top: 4px; overflow-x: auto; white-space: pre-wrap;">${escapeHtml(detailsJson)}</pre>
+          <pre id="audit-full-${idx}" class="code-preview" style="display: none; margin-top: 6px;">${escapeHtml(detailsJson)}</pre>
         </div>
       `;
     }).join("");
@@ -545,15 +593,22 @@ function toggleAuditDetail(idx) {
   }
 }
 
-// Section 7: Chaos Helpers
+// Section 7: Chaos Lab Helpers
 function updateChaosJobSelect(jobs) {
   const select = document.getElementById("chaos-job-select");
   if (!select) return;
-  const currentVal = select.value;
 
-  const claimable = jobs.filter((j) => j.status === "QUEUED" || j.status === "RUNNING");
-  select.innerHTML = '<option value="">-- Select Job to Fail --</option>' + claimable.map((j) => {
-    return `<option value="${j.id}">${j.job_type} (${j.status}) - ${j.id.substring(0, 8)}</option>`;
+  const currentVal = select.value;
+  select.innerHTML = '<option value="">-- Select Active Job --</option>';
+
+  const eligible = jobs.filter((j) => j.status === "RUNNING" || j.status === "QUEUED");
+  if (eligible.length === 0) {
+    select.innerHTML += '<option disabled>No active running or queued jobs</option>';
+    return;
+  }
+
+  select.innerHTML += eligible.map((j) => {
+    return `<option value="${j.id}">[${j.status}] ${j.id.substring(0, 8)} - ${j.job_type}</option>`;
   }).join("");
 
   if (currentVal) select.value = currentVal;
@@ -562,10 +617,17 @@ function updateChaosJobSelect(jobs) {
 function updateChaosWorkerSelect(workers) {
   const select = document.getElementById("chaos-worker-select");
   if (!select) return;
-  const currentVal = select.value;
 
-  const live = workers.filter((w) => w.status !== "DEAD");
-  select.innerHTML = '<option value="">-- Select Worker to Crash --</option>' + live.map((w) => {
+  const currentVal = select.value;
+  select.innerHTML = '<option value="">-- Select Worker to Crash --</option>';
+
+  const alive = workers.filter((w) => w.healthy);
+  if (alive.length === 0) {
+    select.innerHTML += '<option disabled>No healthy workers available</option>';
+    return;
+  }
+
+  select.innerHTML += alive.map((w) => {
     return `<option value="${w.id}">${w.id} (PID ${w.pid}, ${w.status})</option>`;
   }).join("");
 
@@ -574,12 +636,12 @@ function updateChaosWorkerSelect(workers) {
 
 function quickCrashWorker(workerId) {
   confirmAction(
-    "Crash Worker",
+    "Kill Worker",
     `Immediately send SIGTERM to worker '${workerId}'?`,
     async () => {
       try {
         const res = await api.post(`/api/chaos/crash-worker/${workerId}`);
-        showToast("warning", `Crash request dispatched: ${res.result} for ${workerId}`);
+        showToast("warning", `Crash signal sent: ${res.result} for ${workerId}`);
         refreshAll();
       } catch (err) {
         showToast("error", `Crash failed: ${err.message}`);
@@ -599,7 +661,7 @@ async function restartWorker(workerId) {
 }
 
 // Job Details Modal
-async function showJobDetails(jobId) {
+async function openJobDetails(jobId) {
   try {
     const [job, auditEvents] = await Promise.all([
       api.get(`/api/jobs/${jobId}`),
@@ -625,53 +687,61 @@ async function showJobDetails(jobId) {
     document.getElementById("modal-job-created").textContent = createdStr;
     document.getElementById("modal-job-updated").textContent = updatedStr;
 
-    document.getElementById("modal-job-error").textContent = job.last_error || "None";
+    const errRow = document.getElementById("modal-job-error-row");
+    if (errRow) {
+      errRow.style.display = job.last_error ? "block" : "none";
+      document.getElementById("modal-job-error").textContent = job.last_error || "";
+    }
+
     document.getElementById("modal-job-payload").textContent = JSON.stringify(job.payload, null, 2);
-    document.getElementById("modal-job-result").textContent = job.result ? JSON.stringify(job.result, null, 2) : "None (Pending/Uncompleted)";
+    document.getElementById("modal-job-result").textContent = job.result ? JSON.stringify(job.result, null, 2) : "None (Pending / In-Progress)";
 
     // Render audit timeline
     const timeline = document.getElementById("modal-job-timeline");
     if (auditEvents.length === 0) {
-      timeline.innerHTML = `<div style="color: var(--text-muted);">No audit events recorded for this job.</div>`;
+      timeline.innerHTML = `<div class="table-empty">No audit events recorded for this job.</div>`;
     } else {
       timeline.innerHTML = auditEvents.map((ev, i) => {
         const timeStr = new Date(ev.created_at * 1000).toLocaleTimeString();
         return `
-          <div style="background: rgba(0,0,0,0.3); border-left: 3px solid var(--color-primary); padding: 8px 12px; margin-bottom: 6px; border-radius: 4px;">
-            <div style="display: flex; justify-content: space-between; font-size: 11px;">
-              <strong>${i + 1}. [${escapeHtml(ev.event_type)}]</strong>
-              <span style="color: var(--text-muted);">${timeStr}</span>
+          <div class="audit-entry severity-${ev.severity}">
+            <div class="audit-header">
+              <span class="audit-type">${i + 1}. [${escapeHtml(ev.event_type)}]</span>
+              <span class="cell-mono">${timeStr}</span>
             </div>
-            <div style="font-size: 11px; color: var(--text-muted);">Actor: ${escapeHtml(ev.actor)}</div>
-            <div class="cell-mono" style="font-size: 11px; margin-top: 4px; color: #c9d1d9;">${escapeHtml(JSON.stringify(ev.details))}</div>
+            <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 2px;">Actor: ${escapeHtml(ev.actor)}</div>
+            <div class="cell-mono" style="font-size: 11px; color: #cbd5e1;">${escapeHtml(JSON.stringify(ev.details))}</div>
           </div>
         `;
       }).join("");
     }
 
-    document.getElementById("modal-job-details").classList.add("open");
+    document.getElementById("modal-job-details")?.classList.add("open");
   } catch (err) {
     showToast("error", `Failed to load job details: ${err.message}`);
   }
 }
 
 // Confirmation Dialog Modal
-function confirmAction(title, message, onConfirm, confirmText = "Confirm") {
+function confirmAction(title, message, onConfirm) {
   const modal = document.getElementById("modal-confirm");
-  document.getElementById("confirm-modal-title").textContent = title;
-  document.getElementById("confirm-modal-message").textContent = message;
+  const titleEl = document.getElementById("confirm-modal-title");
+  const msgEl = document.getElementById("confirm-modal-message");
+  const confirmBtn = document.getElementById("btn-confirm-action");
 
-  const btnConfirm = document.getElementById("btn-confirm-action");
-  btnConfirm.textContent = confirmText;
+  if (!modal || !confirmBtn) return;
 
-  // Replace button to remove existing click listeners
-  const newBtn = btnConfirm.cloneNode(true);
-  btnConfirm.parentNode.replaceChild(newBtn, btnConfirm);
+  titleEl.textContent = title;
+  msgEl.textContent = message;
 
-  newBtn.addEventListener("click", () => {
+  const handleConfirm = async () => {
+    confirmBtn.removeEventListener("click", handleConfirm);
     closeAllModals();
-    onConfirm();
-  });
+    await onConfirm();
+  };
+
+  confirmBtn.replaceWith(confirmBtn.cloneNode(true));
+  document.getElementById("btn-confirm-action").addEventListener("click", handleConfirm);
 
   modal.classList.add("open");
 }
@@ -680,23 +750,21 @@ function closeAllModals() {
   document.querySelectorAll(".modal-backdrop").forEach((m) => m.classList.remove("open"));
 }
 
-// Polling Loop
+// Background Polling
 function startPolling() {
-  // Main data poll (every 3 seconds)
   setInterval(() => {
     if (document.hidden) return;
     pollCountdown--;
+    const timerEl = document.getElementById("refresh-timer");
+    if (timerEl) timerEl.textContent = `${pollCountdown}s`;
+
     if (pollCountdown <= 0) {
       pollCountdown = 3;
       loadOverviewAndJobs();
       loadWorkers();
-      loadReleases();
     }
-    const cd = document.getElementById("refresh-timer");
-    if (cd) cd.textContent = `${pollCountdown}s`;
   }, 1000);
 
-  // Audit poll (every 5 seconds)
   setInterval(() => {
     if (!document.hidden) {
       loadAudit();
@@ -732,7 +800,7 @@ function showToast(type, message) {
     toast.style.transform = "translateY(10px)";
     toast.style.transition = "all 0.3s ease";
     setTimeout(() => toast.remove(), 300);
-  }, 4000);
+  }, 3500);
 }
 
 function escapeHtml(str) {
@@ -836,7 +904,7 @@ async function openReleaseImpactModal(version) {
             </div>
             <div style="color: var(--color-danger-bright); font-family: var(--font-mono);">${escapeHtml(err.error)}</div>
           </div>
-          <button class="btn btn-sm" style="font-size: 10px; padding: 2px 6px;" onclick="openJobDetails('${err.job_id}')">Inspect</button>
+          <button class="btn btn-sm btn-secondary" onclick="openJobDetails('${err.job_id}')">Inspect</button>
         </div>
       `).join("");
     } else {
@@ -846,7 +914,7 @@ async function openReleaseImpactModal(version) {
     // Timeline list
     const timelineEl = document.getElementById("impact-timeline-list");
     if (!impact.timeline || impact.timeline.length === 0) {
-      timelineEl.innerHTML = `<div style="color: var(--text-muted); font-size: 12px; padding: 10px;">No events recorded in this release window.</div>`;
+      timelineEl.innerHTML = `<div class="table-empty">No events recorded in this release window.</div>`;
     } else {
       timelineEl.innerHTML = impact.timeline.map((ev) => {
         const timeStr = new Date(ev.timestamp * 1000).toLocaleTimeString();
@@ -875,4 +943,3 @@ async function openReleaseImpactModal(version) {
     showToast("error", `Failed to load release impact: ${err.message}`);
   }
 }
-
