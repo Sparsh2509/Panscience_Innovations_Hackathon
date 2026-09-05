@@ -6,116 +6,110 @@
 [![Storage](https://img.shields.io/badge/Storage-SQLite%20WAL-lightgrey?style=for-the-badge&logo=sqlite)](https://sqlite.org)
 [![Cloud Dependencies](https://img.shields.io/badge/Cloud%20Dependencies-Zero%20(Offline%20First)-orange?style=for-the-badge)](.)
 
-> **A self-contained, single-machine reliability platform for mission-critical background job processing.**  
-> Zero cloud dependencies, zero external brokers (no Redis, no RabbitMQ). Pure local resilience with SQLite WAL mode, atomic worker leases, crash recovery, release impact correlation, and one-action instant rollback.
+> **🏆 Panscience Innovations Hackathon Submission**  
+> **NEXUS** is a self-contained, offline-first reliability platform for mission-critical background job processing on a single machine.  
+> **Zero external brokers (no Redis, no RabbitMQ, no Docker required).** Pure local resilience powered by SQLite in WAL mode, atomic worker leases, crash recovery, release impact correlation, and one-action instant rollback.
 
 ---
 
-## Table of Contents
+## ⚡ 1-Minute Quick Start for Judges & Evaluators
 
-- [Overview](#overview)
-- [Key Reliability Guarantees](#key-reliability-guarantees)
-- [Quick Start (Run on Localhost)](#quick-start-run-on-localhost)
-  - [Prerequisites](#prerequisites)
-  - [1. Clone & Setup Virtual Environment](#1-clone--setup-virtual-environment)
-  - [2. Install Dependencies](#2-install-dependencies)
-  - [3. Launch the Platform](#3-launch-the-platform)
-    - [Option A: One-Command All-in-One (Recommended)](#option-a-one-command-all-in-one-recommended)
-    - [Option B: Separate Server and Worker Fleet](#option-b-separate-server-and-worker-fleet)
-  - [4. Open the Operator Dashboard](#4-open-the-operator-dashboard)
-- [Operator Dashboard Features](#operator-dashboard-features)
-- [Running Automated Tests & Demos](#running-automated-tests--demos)
-- [Core Architecture & How It Works](#core-architecture--how-it-works)
-- [REST API Reference](#rest-api-reference)
-- [Project Layout](#project-layout)
+Want to test NEXUS on your PC immediately? Run these 3 simple commands in your terminal:
 
----
-
-## Overview
-
-Modern cloud systems often introduce brittle dependencies—cloud message brokers, external caches, and distributed coordination locks—that fail during network partitions or offline scenarios.
-
-**NEXUS** proves that enterprise-grade background job reliability can run locally on a single machine with zero external infrastructure. Everything runs against a hardened local **SQLite** engine operating in **WAL (Write-Ahead Logging)** mode with busy timeouts, transactional worker leases, automated zombie-process recovery, and automatic release-to-behaviour tracking.
-
----
-
-## Key Reliability Guarantees
-
-| Guarantee | Mechanism | Benefit |
-|---|---|---|
-| **Durable Ingestion** | SQLite WAL Mode + `PRAGMA busy_timeout = 5000` | Zero job loss even under process crashes or disk stalls. |
-| **Deduplication & Idempotency** | Cryptographic idempotency keys + unique DB index | Safe duplicate submissions; duplicate payloads return original result. |
-| **Atomic Lease Claims** | `BEGIN IMMEDIATE` + Visibility Timeouts (30s) | No two workers can ever claim the same job simultaneously. |
-| **Worker Crash Recovery** | Subprocess supervisor + zombie lease reaper | Re-spawns dead workers and re-arms orphaned in-flight jobs. |
-| **Exponential Backoff** | $2^{\text{attempt}} + \text{jitter}$ with dead-letter queue | Prevents cascading retry storms on downstream failures. |
-| **1-Action Atomic Rollback** | Versioned release pointers (`releases` table) | Instantly revert a buggy release to previous known good state. |
-| **Release-to-Behaviour Correlation (R-07)** | Automated telemetry window per release | Connects jobs, failures, crashes, and rollbacks without matching timestamps by eye. |
-| **Chaos & Failure Lab** | Interactive failure injection APIs | Live verification of system resilience under simulated crashes & locks. |
-
----
-
-## Quick Start (Run on Localhost)
-
-Follow these steps to run NEXUS on your local machine in under 2 minutes.
-
-### Prerequisites
-- **Python 3.10+** (Python 3.10, 3.11, 3.12, or 3.13)
-- **Git**
-
----
-
-### 1. Clone & Setup Virtual Environment
-
-#### On Windows (PowerShell or CMD):
-```powershell
-# Clone the repository
+```bash
+# 1. Clone & Enter Repository
 git clone https://github.com/Sparsh2509/Panscience_Innovations_Hackathon.git
 cd Panscience_Innovations_Hackathon
 
-# Create virtual environment
-python -m venv venv
+# 2. Install Dependencies (FastAPI, Uvicorn, Pytest)
+pip install -r requirements.txt
 
-# Activate virtual environment
+# 3. Launch EVERYTHING (Server + Web UI + Worker Fleet) in ONE command:
+python scripts/start_production.py
+```
+
+👉 Now open your browser: **[http://localhost:8000](http://localhost:8000)**  
+👉 Interactive API documentation: **[http://localhost:8000/docs](http://localhost:8000/docs)**
+
+---
+
+## 📋 Table of Contents
+
+- [Judge's Evaluation & Quick Verification Guide](#-judges-evaluation--quick-verification-guide)
+- [How to Run (Server, Workers, Web UI)](#-how-to-run-server-workers-web-ui)
+  - [Option 1: One-Command All-in-One (Recommended)](#option-1-one-command-all-in-one-recommended)
+  - [Option 2: Running Server and Workers in Separate Terminals](#option-2-running-server-and-workers-in-separate-terminals)
+- [System Architecture & Reliability Guarantees](#-system-architecture--reliability-guarantees)
+- [Interactive Operator Dashboard Walkthrough](#-interactive-operator-dashboard-walkthrough)
+- [Automated Test Suite (59/59 Passing)](#-automated-test-suite-5959-passing)
+- [Interactive CLI Requirement Demos (Phase 2 to 7)](#-interactive-cli-requirement-demos)
+- [REST API Endpoints](#-rest-api-endpoints)
+- [Project Directory Layout](#-project-directory-layout)
+
+---
+
+## 🎯 Judge's Evaluation & Quick Verification Guide
+
+Here is a 3-minute interactive checklist for judges to evaluate every core reliability requirement in the platform:
+
+| Requirement | Where to Test in UI (`http://localhost:8000`) | What to Expect |
+|---|---|---|
+| **1. Durable Job Submission** | **Jobs Tab** → Click **"Submit Job"** | Job is saved immediately to SQLite WAL; workers pick it up and mark it `COMPLETED`. |
+| **2. Deduplication & Idempotency** | **Jobs Tab** → Click **"Send Duplicate Submission"** | System detects the duplicate `idempotency_key` and returns the existing result without running duplicate work. |
+| **3. Live Worker Fleets & Heartbeats** | **Worker Fleet Tab** | Displays `worker-1` and `worker-2` with active PIDs, heartbeat timestamps, and live lease assignments. |
+| **4. Worker Crash Recovery & Lease Reaping** | **Chaos Lab Tab** → Click **"Kill Worker Process"** | Worker process is terminated mid-flight. The Supervisor detects the crash, restarts a new worker process, and the Reaper rescues the orphaned job lease. |
+| **5. Versioned Releases & 1-Action Rollback** | **Releases Tab** → Deploy `v1.1.0` then click **"Rollback"** | Zero-downtime atomic version switch with instant one-click rollback back to `v1.0.0`. |
+| **6. Release-to-Behaviour Correlation (R-07)** | **Releases Tab** → Select release → View **"Impact & Correlation"** | Automatically correlates failures, retries, worker crashes, and milestones directly to that release—no timestamp matching needed! |
+| **7. 100% Automated Test Coverage** | Run `pytest` in terminal | **59 passed tests** in ~6 seconds covering all layers. |
+
+---
+
+## 🚀 How to Run (Server, Workers, Web UI)
+
+### Prerequisites
+- **Python 3.10+** (Tested on Python 3.10, 3.11, 3.12, 3.13)
+- **Git**
+- *No Docker, Redis, or external database required!*
+
+### Step 1: Clone & Setup Virtual Environment (Optional but Recommended)
+
+#### Windows (PowerShell / CMD):
+```powershell
+git clone https://github.com/Sparsh2509/Panscience_Innovations_Hackathon.git
+cd Panscience_Innovations_Hackathon
+
+python -m venv venv
 venv\Scripts\activate
 ```
 
-#### On macOS / Linux (Terminal):
+#### macOS / Linux (Terminal):
 ```bash
-# Clone the repository
 git clone https://github.com/Sparsh2509/Panscience_Innovations_Hackathon.git
 cd Panscience_Innovations_Hackathon
 
-# Create virtual environment
 python3 -m venv venv
-
-# Activate virtual environment
 source venv/bin/activate
 ```
 
----
-
-### 2. Install Dependencies
+### Step 2: Install Dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
-
-*(Installs lightweight pure-Python dependencies: `fastapi`, `uvicorn`, `pydantic`, `pytest`, `httpx`)*
+*(Installs pure-Python lightweight packages: `fastapi`, `uvicorn`, `pydantic`, `pytest`, `httpx`)*
 
 ---
 
-### 3. Launch the Platform
+### Step 3: Choose How to Run
 
-You have two convenient options to start NEXUS:
-
-#### Option A: One-Command All-in-One (Recommended)
-This runs both the **FastAPI Web Control Plane** and the **Worker Fleet Supervisor (2 workers)** in a single terminal window:
+#### Option 1: One-Command All-in-One (Recommended)
+This runs the **FastAPI Web Server**, the **Web UI**, and the **Worker Fleet Supervisor** together in one terminal:
 
 ```bash
 python scripts/start_production.py
 ```
 
-*Output:*
+*Terminal Output:*
 ```text
 [RENDER] Starting NEXUS Production Platform on 0.0.0.0:8000...
 [RENDER] Starting Worker Supervisor & Fleet...
@@ -125,107 +119,28 @@ INFO:     Application startup complete.
 INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
 ```
 
+Now open: **`http://localhost:8000`**
+
 ---
 
-#### Option B: Separate Server and Worker Fleet
-If you want to view live worker process output in a dedicated terminal:
+#### Option 2: Running Server and Workers in Separate Terminals
+If you want to observe live logs from the Web Server and the Worker Fleet independently:
 
-**Terminal 1 — API Server & Web UI:**
+**Terminal 1 — Web Server & Operator Dashboard:**
 ```bash
 python scripts/run_server.py
 ```
-*(Runs FastAPI on `http://127.0.0.1:8000`)*
+*(Serves the Control Plane API & Dashboard on `http://127.0.0.1:8000`)*
 
-**Terminal 2 — Worker Fleet & Reaper:**
+**Terminal 2 — Worker Fleet & Reaper Supervisor:**
 ```bash
 python scripts/run_workers.py
 ```
-*(Spawns `worker-1` and `worker-2`, performs periodic heartbeats, and reaps expired leases)*
+*(Spawns 2 independent Python worker subprocesses, performs periodic heartbeats, claims leases, and reaps expired jobs)*
 
 ---
 
-### 4. Open the Operator Dashboard
-
-Open your web browser and navigate to:
-
-👉 **[http://localhost:8000](http://localhost:8000)**
-
-*(Interactive Swagger OpenAPI documentation is also available at **[http://localhost:8000/docs](http://localhost:8000/docs)**)*
-
----
-
-## Operator Dashboard Features
-
-The NEXUS Web Console gives operators a live dark-mode interface:
-
-1. **Header & Live Telemetry:**
-   - **System Status Badge:** Real-time polling indicator (ONLINE / OFFLINE).
-   - **Active Release Pill:** Displays active version (`v1.0.0`). Clicking it opens the Releases manager.
-   - **Top Metrics:** Active Workers, Queued Jobs, In-Flight Jobs, Failed / Dead-Letter count.
-
-2. **Job Operations Tab:**
-   - **Submit Jobs:** Enter Job Type (`payment`, `email`, `sync`, etc.), priority (`0-10`), optional Idempotency Key, and JSON payload.
-   - **Idempotency Guarantee Demo:** Click *"Send Duplicate Submission"* to observe how duplicate idempotency keys return identical results without running duplicate work.
-   - **Live Jobs Table:** Displays Status (`QUEUED`, `CLAIMED`, `COMPLETED`, `FAILED`, `DEAD_LETTER`), active worker lease, retry count, and exponential backoff timers.
-   - **Manual Retry Action:** Any failed or dead-letter job can be re-armed with a single click.
-
-3. **Worker Fleet Tab:**
-   - Visual cards for all worker subprocesses (`worker-1`, `worker-2`).
-   - Displays real-time PID, status (`IDLE`, `BUSY`, `DEAD`), last heartbeat timestamp, and current job lease.
-   - Live completed jobs counter per worker.
-
-4. **Releases & Impact Correlation (R-07) Tab:**
-   - **Deploy New Version:** Create and deploy releases (e.g., `v1.1.0`, `v2.0.0`).
-   - **1-Action Atomic Rollback:** Instantly rollback to the previous active release with one click.
-   - **Release Impact Analytics:** Automatically links releases to errors, retries, worker crashes, and job throughput during that release's active lifespan—no manual timestamp matching needed.
-
-5. **Chaos & Resilience Lab:**
-   - **Simulate Worker SIGKILL:** Crashes a worker process mid-execution; observe the supervisor automatically detect the crash, mark it dead, re-spawn a healthy worker, and re-arm the interrupted job lease without data loss.
-   - **DB Lock Contention Simulation:** Verifies that SQLite WAL mode and busy handlers gracefully queue transactions without throwing database locked errors.
-   - **Immutable Audit Log:** Chronological, tamper-evident log of all system transitions (claims, heartbeats, completions, crashes, rollbacks).
-
----
-
-## Running Automated Tests & Demos
-
-### Run Full Test Suite (59 Tests)
-Run the automated pytest test suite covering API, SQLite persistence, concurrency, worker leases, crash recovery, release rollbacks, and release impact correlation:
-
-```bash
-pytest -v
-```
-
-*Expected output:*
-```text
-======================= 59 passed in 6.5s =======================
-```
-
-### Run Verification Demonstrations
-Step-by-step interactive command-line demonstrations:
-
-```bash
-# Phase 2 Demo: Durable job submission & idempotency
-python scripts/demo_phase2.py
-
-# Phase 3 Demo: Worker lease claiming, heartbeats, and backoff
-python scripts/demo_phase3.py
-
-# Phase 4 Demo: Supervisor crash recovery & orphan lease reaping
-python scripts/demo_phase4.py
-
-# Phase 5 Demo: Versioned releases & 1-action atomic rollback
-python scripts/demo_phase5.py
-
-# Phase 6 Demo: Control-plane API, audit trail, and chaos injection
-python scripts/demo_phase6.py
-
-# Phase 7 Demo: R-07 Release-to-Behaviour Correlation & Timeline
-python scripts/demo_phase7.py
-```
-
----
-
-## Core Architecture & How It Works
+## 🛡️ System Architecture & Reliability Guarantees
 
 ```
                         ┌──────────────────────────────┐
@@ -261,60 +176,132 @@ python scripts/demo_phase7.py
                         └──────────────────────────────┘
 ```
 
-### 1. SQLite WAL Engine (`nexus/core/db.py`)
-- Configured with `PRAGMA journal_mode = WAL` (Write-Ahead Logging), allowing concurrent readers without blocking writers.
-- Configured with `PRAGMA busy_timeout = 5000` to automatically retry locked transactions for up to 5 seconds.
-- Transaction context manager with explicit `BEGIN IMMEDIATE` isolation for lease claims.
+1. **SQLite Storage Engine in WAL Mode (`nexus/core/db.py`)**:
+   - `PRAGMA journal_mode = WAL` enables concurrent readers alongside writers without locks.
+   - `PRAGMA busy_timeout = 5000` prevents `database is locked` errors during burst traffic.
+   - Context-managed `BEGIN IMMEDIATE` guarantees atomic transaction boundaries.
 
-### 2. Leases & Crash Recovery (`nexus/workers/` & `nexus/services/reaper.py`)
-- Workers claim jobs by setting `claimed_by = worker_id`, `status = 'CLAIMED'`, and `lease_expires_at = NOW() + 30s`.
-- While working, workers ping `PUT /api/workers/{id}/heartbeat` every 5 seconds to extend their lease.
-- If a worker dies (power loss, SIGKILL, out-of-memory), its lease expires. The **Reaper** detects expired leases and transitions the job back to `QUEUED` (incrementing retry count) or `DEAD_LETTER`.
+2. **Atomic Worker Leases & Heartbeats (`nexus/workers/` & `nexus/services/reaper.py`)**:
+   - Workers claim work atomically with a 30-second visibility lease window.
+   - Active workers emit heartbeats every 5 seconds to renew their lease.
+   - If a worker crashes or hangs, the **Zombie Reaper** detects the expired lease and safely returns the job to `QUEUED` or quarantines it to `DEAD_LETTER`.
 
-### 3. Release Impact Correlation (`nexus/services/release_impact.py`)
-- Every job records the `release_version` active at the moment it was claimed.
-- Audit events log every deployment, rollback, and worker crash with the active release tag.
-- When an operator queries `GET /api/releases/{version}/impact`, NEXUS computes the exact duration, failure rate, retries, crashes, and event milestones that occurred under that specific release.
+3. **Release-to-Behaviour Correlation (Requirement R-07)**:
+   - Tracks software changes alongside runtime system health.
+   - Automatically computes error rates, retries, worker crashes, and chronological milestones during each release's active window.
 
 ---
 
-## REST API Reference
+## 🖥️ Interactive Operator Dashboard Walkthrough
 
-| Method | Path | Description |
+When you open **`http://localhost:8000`**, you have access to a clean dark-mode control room:
+
+- **Top Bar:** Shows live system status (`ONLINE`), active software release (`v1.0.0`), and key fleet metrics.
+- **Jobs Tab:**
+  - Submit jobs with custom payloads, priorities (`0-10`), and idempotency keys.
+  - Test idempotency by clicking *"Send Duplicate Submission"*.
+  - Live table showing job status, retry count, active worker lease, and backoff countdowns.
+  - 1-click manual retry button for failed jobs.
+- **Worker Fleet Tab:**
+  - Real-time status cards for each worker subprocess.
+  - Completed jobs counter, active job lease ID, and last heartbeat timestamp.
+- **Releases Tab:**
+  - Create new versions and deploy them.
+  - 1-Action Rollback button to instantly revert to previous release.
+  - Release impact telemetry viewer.
+- **Chaos Lab Tab:**
+  - Kill worker processes to test automatic supervisor respawn and lease recovery.
+  - Trigger database contention simulations.
+  - Inspect the tamper-evident Immutable Audit Log.
+
+---
+
+## 🧪 Automated Test Suite (59/59 Passing)
+
+NEXUS includes an automated test suite verifying every component end-to-end.
+
+To run all tests:
+```bash
+pytest -v
+```
+
+*Output:*
+```text
+nexus/tests/test_api.py .............                                    [ 22%]
+nexus/tests/test_db.py ........                                          [ 35%]
+nexus/tests/test_job_service.py ...........                              [ 54%]
+nexus/tests/test_phase3.py .........                                     [ 69%]
+nexus/tests/test_release_impact.py .........                             [ 84%]
+nexus/tests/test_release_service.py .........                            [100%]
+
+======================= 59 passed in 6.52s =======================
+```
+
+---
+
+## 📽️ Interactive CLI Requirement Demos
+
+You can also run automated, step-by-step terminal demonstrations for each phase:
+
+```bash
+# Phase 2: Durable Ingestion & Idempotency
+python scripts/demo_phase2.py
+
+# Phase 3: Worker Claims, Heartbeats & Backoff
+python scripts/demo_phase3.py
+
+# Phase 4: Supervisor Crash Recovery & Orphan Reaper
+python scripts/demo_phase4.py
+
+# Phase 5: Versioned Releases & Atomic 1-Action Rollback
+python scripts/demo_phase5.py
+
+# Phase 6: Control Plane API, Audit Log & Chaos Injection
+python scripts/demo_phase6.py
+
+# Phase 7: R-07 Release-to-Behaviour Correlation & Timeline
+python scripts/demo_phase7.py
+```
+
+---
+
+## 📡 REST API Endpoints
+
+Interactive Swagger UI: **`http://localhost:8000/docs`**
+
+| Method | Endpoint | Description |
 |---|---|---|
-| `GET` | `/health` | System health check and database connectivity |
-| `POST` | `/api/jobs` | Submit a new durable job (with optional `idempotency_key`) |
-| `GET` | `/api/jobs` | List background jobs with status filtering and pagination |
-| `GET` | `/api/jobs/{id}` | Retrieve detailed job state and execution payload |
-| `POST` | `/api/jobs/{id}/retry` | Manually re-arm a failed or dead-letter job |
-| `GET` | `/api/workers` | List all registered worker processes and heartbeats |
-| `POST` | `/api/workers/register` | Register a new worker in the fleet |
-| `PUT` | `/api/workers/{id}/heartbeat` | Send worker heartbeat and extend active lease |
-| `GET` | `/api/releases` | List all historical software releases |
-| `GET` | `/api/releases/active` | Get currently active release pointer |
-| `POST` | `/api/releases` | Create a new release candidate |
-| `POST` | `/api/releases/{version}/deploy` | Atomically deploy a release version |
-| `POST` | `/api/releases/rollback` | Perform atomic 1-action rollback to previous release |
-| `GET` | `/api/releases/{version}/impact` | Get full release-to-behaviour correlation & timeline |
-| `GET` | `/api/audit` | Query immutable audit log with event filtering |
-| `POST` | `/api/chaos/kill-worker` | Inject chaos: terminate worker process to test recovery |
-| `POST` | `/api/chaos/db-contention` | Inject chaos: simulate database write contention |
-
-Full interactive API docs: **`http://localhost:8000/docs`**
+| `GET` | `/health` | System health check & SQLite connectivity |
+| `POST` | `/api/jobs` | Submit durable background job (with optional `idempotency_key`) |
+| `GET` | `/api/jobs` | List jobs with status filter and pagination |
+| `GET` | `/api/jobs/{id}` | Get full job state, payload, and retry history |
+| `POST` | `/api/jobs/{id}/retry` | Manually re-arm a failed/dead-letter job |
+| `GET` | `/api/workers` | List worker subprocesses, heartbeats, and status |
+| `POST` | `/api/workers/register` | Register new worker in the fleet |
+| `PUT` | `/api/workers/{id}/heartbeat` | Send worker heartbeat and extend lease |
+| `GET` | `/api/releases` | List software release history |
+| `GET` | `/api/releases/active` | Get currently active release |
+| `POST` | `/api/releases` | Register a new release candidate |
+| `POST` | `/api/releases/{version}/deploy` | Atomically deploy release version |
+| `POST` | `/api/releases/rollback` | Instant 1-action atomic rollback |
+| `GET` | `/api/releases/{version}/impact` | Get full release-to-behaviour correlation report |
+| `GET` | `/api/audit` | Query immutable audit ledger |
+| `POST` | `/api/chaos/kill-worker` | Terminate worker process to test recovery |
+| `POST` | `/api/chaos/db-contention` | Simulate heavy SQLite write lock contention |
 
 ---
 
-## Project Layout
+## 📁 Project Directory Layout
 
 ```
 Panscience_Innovations_Hackathon/
 ├── nexus/
 │   ├── api/                     # FastAPI control-plane REST endpoints
-│   │   ├── routes/              # Modular routes (jobs, workers, releases, audit, chaos)
-│   │   ├── app.py               # Main FastAPI application and static mount
-│   │   └── dependencies.py      # Request database dependencies
-│   ├── core/                    # SQLite engine and schema initialization
-│   │   ├── db.py                # WAL mode, busy timeouts, transaction context manager
+│   │   ├── routes/              # Routes: jobs, workers, releases, audit, chaos
+│   │   ├── app.py               # Main FastAPI app & static dashboard mount
+│   │   └── dependencies.py      # Database dependency injection
+│   ├── core/                    # Core SQLite engine
+│   │   ├── db.py                # WAL mode, busy timeouts, ACID transactions
 │   │   └── models.py            # Pydantic data schemas
 │   ├── services/                # Business logic layer
 │   │   ├── job_service.py       # Ingestion, idempotency, atomic lease claiming
@@ -327,14 +314,14 @@ Panscience_Innovations_Hackathon/
 │   │   └── supervisor.py        # Process supervisor and crash auto-restart
 │   ├── static/                  # Vanilla Web Operator Console
 │   │   ├── index.html           # Dark-mode dashboard layout
-│   │   ├── style.css            # Custom CSS design system
+│   │   ├── style.css            # Responsive CSS design system
 │   │   └── app.js               # Reactive UI client
 │   └── tests/                   # 59 automated unit and integration tests
-├── data/                        # Local SQLite database directory (WAL / SHM / DB)
+├── data/                        # Local SQLite database files
 ├── scripts/                     # Launchers and verification demos
-│   ├── start_production.py      # All-in-one runner (API + Supervisor)
-│   ├── run_server.py            # API server launcher
-│   ├── run_workers.py           # Worker fleet launcher
+│   ├── start_production.py      # All-in-one runner (Server + Workers + UI)
+│   ├── run_server.py            # API server & UI launcher
+│   ├── run_workers.py           # Worker fleet & reaper launcher
 │   └── demo_phase2.py ... 7.py  # Interactive requirement demos
 ├── pyproject.toml               # Project metadata
 ├── requirements.txt             # Python dependencies
@@ -343,6 +330,7 @@ Panscience_Innovations_Hackathon/
 
 ---
 
-## License
+## 👥 Authors & License
 
-This project was built for the **Panscience Innovations Hackathon**. Open-source under the MIT License.
+Built for the **Panscience Innovations Hackathon**.  
+Released under the **MIT License**.
