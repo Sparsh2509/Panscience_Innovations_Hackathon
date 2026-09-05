@@ -12,10 +12,12 @@ from nexus.api.dependencies import get_db_conn
 from nexus.core.config import DEFAULT_JOB_PRIORITY, DEFAULT_MAX_RETRIES
 from nexus.services.audit_service import get_audit_events_for_job
 from nexus.services.job_service import (
+    JobNotFoundError,
     JobValidationError,
     create_job,
     get_job,
     list_jobs,
+    retry_job,
 )
 
 router = APIRouter()
@@ -94,3 +96,21 @@ def get_job_audit(
     if not job:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Job '{job_id}' not found.")
     return get_audit_events_for_job(conn, job_id)
+
+
+@router.post("/{job_id}/retry", summary="Manually retry a failed or dead-letter job")
+def retry_failed_job(
+    job_id: str,
+    conn: sqlite3.Connection = Depends(get_db_conn),
+):
+    """
+    Manually re-queues a failed or dead-letter job for execution.
+    Resets status to QUEUED and extends max retries so workers claim it.
+    """
+    try:
+        return retry_job(conn, job_id)
+    except JobNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+

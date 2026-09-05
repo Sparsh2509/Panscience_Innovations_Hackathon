@@ -691,3 +691,57 @@ def list_workers(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     """
     rows = conn.execute("SELECT * FROM workers ORDER BY started_at ASC").fetchall()
     return [dict(r) for r in rows]
+
+
+def retry_job(
+    conn: sqlite3.Connection,
+    job_id: str,
+    actor: str = "operator",
+) -> dict[str, Any]:
+    """
+    Manually re-queues a failed or dead-letter job for execution.
+    Resets status to QUEUED, clears lease tokens, and extends max_retries
+    if needed so the job can be claimed and executed by workers.
+    """
+    now = time.time()
+    with transaction(conn, mode="IMMEDIATE"):
+        row = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
+        if not row:
+            raise JobNotFoundError(f"Job '{job_id}' not found.")
+
+        current_attempts = row["attempt_count"]
+        current_max = row["max_retries"]
+        new_max = max(current_max, current_attempts + 3)
+
+        conn.execute(
+            """
+            UPDATE jobs
+            SET status = 'QUEUED',
+                run_at = ?,
+                max_retries = ?,
+                leased_by = NULL,
+                lease_token = NULL,
+                lease_expires_at = NULL,
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (now, new_max, now, job_id),
+        )
+
+        record_audit_event(
+            conn,
+            event_type="JOB_REQUEUED",
+            actor=actor,
+            job_id=job_id,
+            severity="INFO",
+            details={
+                "action": "Manual retry initiated by operator",
+                "previous_status": row["status"],
+                "previous_attempts": current_attempts,
+                "new_max_retries": new_max,
+            },
+        )
+
+        updated = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
+        return _row_to_job_dict(updated)
+

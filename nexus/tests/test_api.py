@@ -286,3 +286,28 @@ def test_dashboard_and_static_serving(client):
     res_docs = test_client.get("/docs")
     assert res_docs.status_code == 200
 
+
+# 19. Manual Job Retry Endpoint
+def test_job_retry_endpoint(client):
+    test_client, _ = client
+
+    # 404 for non-existent job
+    res_404 = test_client.post("/api/jobs/job-unknown-999/retry")
+    assert res_404.status_code == 404
+
+    # Create job
+    create_res = test_client.post(
+        "/api/jobs",
+        json={"job_type": "email", "payload": {"to": "test@example.com"}},
+    )
+    assert create_res.status_code == 201
+    job_id = create_res.json()["job"]["id"]
+
+    # Retry job
+    retry_res = test_client.post(f"/api/jobs/{job_id}/retry")
+    assert retry_res.status_code == 200
+    retried_job = retry_res.json()
+    assert retried_job["id"] == job_id
+    assert retried_job["status"] == "QUEUED"
+
+
