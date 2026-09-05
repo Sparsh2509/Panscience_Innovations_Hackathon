@@ -9,7 +9,14 @@ import time
 import uuid
 from typing import Any, Optional
 
-from nexus.core.config import DEFAULT_JOB_PRIORITY, DEFAULT_LEASE_DURATION_SECONDS, DEFAULT_MAX_RETRIES
+from nexus.core.config import (
+    DEFAULT_JOB_PRIORITY,
+    DEFAULT_LEASE_DURATION_SECONDS,
+    DEFAULT_MAX_RETRIES,
+    DEFAULT_RETRY_BACKOFF_FACTOR,
+    DEFAULT_RETRY_BASE_DELAY_SECONDS,
+    DEFAULT_RETRY_MAX_DELAY_SECONDS,
+)
 from nexus.core.db import transaction
 from nexus.services.audit_service import record_audit_event
 
@@ -417,3 +424,270 @@ def requeue_job(
 
         cursor = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,))
         return _row_to_job_dict(cursor.fetchone())
+
+
+def extend_lease(
+    conn: sqlite3.Connection,
+    job_id: str,
+    worker_id: str,
+    lease_token: str,
+    extension_duration: float = DEFAULT_LEASE_DURATION_SECONDS,
+) -> bool:
+    """
+    Extends the lease expiration of an active RUNNING job.
+
+    Verifies:
+    - job status is RUNNING
+    - worker_id matches leased_by
+    - lease_token matches current lease_token
+
+    Returns True if extended successfully, False if lease was stolen, expired, or worker mismatch.
+    """
+    now = time.time()
+    new_expires_at = now + extension_duration
+
+    with transaction(conn, mode="IMMEDIATE"):
+        cursor = conn.execute(
+            """
+            UPDATE jobs
+            SET lease_expires_at = ?,
+                updated_at = ?
+            WHERE id = ? AND status = 'RUNNING' AND leased_by = ? AND lease_token = ?
+            """,
+            (new_expires_at, now, job_id, worker_id, lease_token),
+        )
+
+        if cursor.rowcount == 1:
+            record_audit_event(
+                conn,
+                event_type="LEASE_EXTENDED",
+                actor=f"worker:{worker_id}",
+                job_id=job_id,
+                severity="INFO",
+                details={
+                    "lease_duration": extension_duration,
+                    "new_lease_expires_at": new_expires_at,
+                },
+            )
+            return True
+        return False
+
+
+def fail_job(
+    conn: sqlite3.Connection,
+    job_id: str,
+    worker_id: str,
+    lease_token: str,
+    error_msg: str,
+    base_delay: float = DEFAULT_RETRY_BASE_DELAY_SECONDS,
+    backoff_factor: float = DEFAULT_RETRY_BACKOFF_FACTOR,
+    max_delay: float = DEFAULT_RETRY_MAX_DELAY_SECONDS,
+) -> dict[str, Any]:
+    """
+    Handles a job failure during worker execution.
+
+    Applies deterministic exponential backoff retry:
+    - If attempt_count < max_retries:
+        Calculates delay = min(max_delay, base_delay * (backoff_factor ** (attempt - 1)))
+        Resets status to QUEUED with run_at = now + delay
+        Clears lease fields
+        Emits JOB_FAILED and RETRY_SCHEDULED audit events
+    - If attempt_count >= max_retries:
+        Transitions status to DEAD_LETTER
+        Clears lease fields
+        Emits JOB_FAILED and DEAD_LETTERED audit events
+
+    Raises LeaseAuthorizationError if caller is not the authorized lease holder.
+    """
+    now = time.time()
+
+    with transaction(conn, mode="IMMEDIATE"):
+        cursor = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,))
+        job_row = cursor.fetchone()
+        if not job_row:
+            raise JobNotFoundError(f"Job '{job_id}' not found.")
+        if job_row["status"] != "RUNNING" or job_row["leased_by"] != worker_id or job_row["lease_token"] != lease_token:
+            raise LeaseAuthorizationError(
+                f"Unauthorized fail attempt by worker '{worker_id}' with token '{lease_token}'."
+            )
+
+        attempt_count = job_row["attempt_count"]
+        max_retries = job_row["max_retries"]
+
+        # Record failure event
+        record_audit_event(
+            conn,
+            event_type="JOB_FAILED",
+            actor=f"worker:{worker_id}",
+            job_id=job_id,
+            severity="WARN",
+            details={
+                "attempt": attempt_count,
+                "max_retries": max_retries,
+                "error": error_msg,
+            },
+        )
+
+        if attempt_count < max_retries:
+            # Exponential backoff formula: base * (factor ** (attempt - 1))
+            delay = min(max_delay, base_delay * (backoff_factor ** (attempt_count - 1)))
+            next_run_at = now + delay
+
+            conn.execute(
+                """
+                UPDATE jobs
+                SET status = 'QUEUED',
+                    run_at = ?,
+                    last_error = ?,
+                    leased_by = NULL,
+                    lease_token = NULL,
+                    lease_expires_at = NULL,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (next_run_at, error_msg, now, job_id),
+            )
+
+            record_audit_event(
+                conn,
+                event_type="RETRY_SCHEDULED",
+                actor=f"worker:{worker_id}",
+                job_id=job_id,
+                severity="INFO",
+                details={
+                    "attempt": attempt_count,
+                    "max_retries": max_retries,
+                    "delay_seconds": delay,
+                    "next_run_at": next_run_at,
+                    "error": error_msg,
+                },
+            )
+        else:
+            # Max retries reached -> move to DEAD_LETTER
+            conn.execute(
+                """
+                UPDATE jobs
+                SET status = 'DEAD_LETTER',
+                    last_error = ?,
+                    leased_by = NULL,
+                    lease_token = NULL,
+                    lease_expires_at = NULL,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (error_msg, now, job_id),
+            )
+
+            record_audit_event(
+                conn,
+                event_type="DEAD_LETTERED",
+                actor=f"worker:{worker_id}",
+                job_id=job_id,
+                severity="ERROR",
+                details={
+                    "attempt": attempt_count,
+                    "max_retries": max_retries,
+                    "error": error_msg,
+                    "reason": "Max retries exhausted",
+                },
+            )
+
+        updated_row = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
+        return _row_to_job_dict(updated_row)
+
+
+def register_worker(conn: sqlite3.Connection, worker_id: str, pid: int) -> dict[str, Any]:
+    """
+    Registers a worker process in the workers table in IDLE status.
+    Safe for restarted workers (upsert). Emits WORKER_STARTED audit event.
+    """
+    now = time.time()
+    with transaction(conn, mode="IMMEDIATE"):
+        conn.execute(
+            """
+            INSERT INTO workers (id, pid, status, current_job_id, last_heartbeat_at, started_at)
+            VALUES (?, ?, 'IDLE', NULL, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                pid = excluded.pid,
+                status = 'IDLE',
+                current_job_id = NULL,
+                last_heartbeat_at = excluded.last_heartbeat_at,
+                started_at = excluded.started_at
+            """,
+            (worker_id, pid, now, now),
+        )
+
+        record_audit_event(
+            conn,
+            event_type="WORKER_STARTED",
+            actor=f"worker:{worker_id}",
+            severity="INFO",
+            details={"pid": pid, "status": "IDLE"},
+        )
+
+        row = conn.execute("SELECT * FROM workers WHERE id = ?", (worker_id,)).fetchone()
+        return dict(row)
+
+
+def update_worker_heartbeat(
+    conn: sqlite3.Connection,
+    worker_id: str,
+    status: Optional[str] = None,
+    current_job_id: Optional[str] = None,
+    clear_job: bool = False,
+) -> bool:
+    """
+    Updates a worker's last_heartbeat_at timestamp and optionally its status or current_job_id.
+    If clear_job is True, sets current_job_id to NULL.
+    """
+    now = time.time()
+    with transaction(conn, mode="IMMEDIATE"):
+        if clear_job:
+            if status is not None:
+                cursor = conn.execute(
+                    "UPDATE workers SET last_heartbeat_at = ?, status = ?, current_job_id = NULL WHERE id = ?",
+                    (now, status, worker_id),
+                )
+            else:
+                cursor = conn.execute(
+                    "UPDATE workers SET last_heartbeat_at = ?, current_job_id = NULL WHERE id = ?",
+                    (now, worker_id),
+                )
+        elif current_job_id is not None:
+            if status is not None:
+                cursor = conn.execute(
+                    "UPDATE workers SET last_heartbeat_at = ?, status = ?, current_job_id = ? WHERE id = ?",
+                    (now, status, current_job_id, worker_id),
+                )
+            else:
+                cursor = conn.execute(
+                    "UPDATE workers SET last_heartbeat_at = ?, current_job_id = ? WHERE id = ?",
+                    (now, current_job_id, worker_id),
+                )
+        elif status is not None:
+            cursor = conn.execute(
+                "UPDATE workers SET last_heartbeat_at = ?, status = ? WHERE id = ?",
+                (now, status, worker_id),
+            )
+        else:
+            cursor = conn.execute(
+                "UPDATE workers SET last_heartbeat_at = ? WHERE id = ?",
+                (now, worker_id),
+            )
+        return cursor.rowcount > 0
+
+
+def get_worker(conn: sqlite3.Connection, worker_id: str) -> Optional[dict[str, Any]]:
+    """
+    Retrieves worker record by worker_id.
+    """
+    row = conn.execute("SELECT * FROM workers WHERE id = ?", (worker_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def list_workers(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    """
+    Lists all workers ordered by start time.
+    """
+    rows = conn.execute("SELECT * FROM workers ORDER BY started_at ASC").fetchall()
+    return [dict(r) for r in rows]
